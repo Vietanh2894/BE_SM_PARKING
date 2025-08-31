@@ -38,7 +38,10 @@ public class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint 
         String errorMessage = Optional.ofNullable(authException.getCause()).map(Throwable::getMessage)
                 .orElse(authException.getMessage());
         res.setError(errorMessage);
-        res.setMessage("Token không hợp lệ (hết hạn, không đúng định dạng, hoặc không truyền jwt ở header)");
+        res.setMessage("TRUY CẬP BỊ TỪ CHỐI: Bạn cần đăng nhập bằng tài khoản Staff để truy cập hệ thống. " +
+                "Vui lòng sử dụng endpoint POST /login với username/password của Staff để lấy JWT token, " +
+                "sau đó thêm 'Authorization: Bearer YOUR_TOKEN' vào header của request.");
+        res.setData("Hướng dẫn: POST /login -> Lấy accessToken -> Thêm vào Header: Authorization: Bearer TOKEN");
 
         mapper.writeValue(response.getWriter(), res);
     }

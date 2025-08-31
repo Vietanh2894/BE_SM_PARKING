@@ -48,7 +48,8 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(
                         authz -> authz
                                 .requestMatchers("/", "/login").permitAll()
-                                .anyRequest().authenticated())
+                                // CHỈ CHO PHÉP STAFF (ADMIN hoặc BAO_VE) TRUY CẬP TẤT CẢ ENDPOINT KHÁC
+                                .anyRequest().hasAnyRole("ADMIN", "BAO_VE"))
                 // .anyRequest().permitAll())
                 .oauth2ResourceServer((oauth2) -> oauth2.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(customAuthenticationEntryPoint))
@@ -75,8 +76,9 @@ public class SecurityConfiguration {
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthorityPrefix("");
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("check");
+        grantedAuthoritiesConverter.setAuthorityPrefix(""); // Không thêm prefix
+        grantedAuthoritiesConverter.setAuthoritiesClaimName("check"); // Lấy authorities từ claim "check"
+
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
         jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
         return jwtAuthenticationConverter;
