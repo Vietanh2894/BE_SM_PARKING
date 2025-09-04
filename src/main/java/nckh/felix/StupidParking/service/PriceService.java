@@ -1,11 +1,13 @@
 package nckh.felix.StupidParking.service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
 import nckh.felix.StupidParking.domain.Price;
+import nckh.felix.StupidParking.domain.VehicleType;
 import nckh.felix.StupidParking.repository.PriceRepository;
 
 @Service
@@ -45,5 +47,24 @@ public class PriceService {
 
     public void handleDeletePrice(String maBangGia) {
         this.priceRepository.deleteById(maBangGia);
+    }
+
+    /**
+     * Lấy giá theo giờ cho loại xe (mặc định lấy giá theo giờ)
+     */
+    public BigDecimal getHourlyRateByVehicleType(String maLoaiXe) {
+        VehicleType vehicleType = new VehicleType(maLoaiXe);
+
+        // Tìm giá theo loại xe và hình thức đỗ xe (giả sử có mã hình thức GIO cho đỗ
+        // theo giờ)
+        List<Price> prices = this.priceRepository.findByMaLoaiXe(vehicleType);
+
+        if (!prices.isEmpty()) {
+            // Lấy giá đầu tiên tìm được
+            return prices.get(0).getGia();
+        }
+
+        // Giá mặc định nếu không tìm thấy
+        return BigDecimal.valueOf(10000); // 10,000 VND/giờ
     }
 }

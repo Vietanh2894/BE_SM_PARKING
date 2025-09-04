@@ -97,6 +97,10 @@ public class StaffService {
         return this.staffRepository.findByAccount(account);
     }
 
+    public Staff fetchStaffByUsername(String username) {
+        return this.staffRepository.findByAccountUsername(username);
+    }
+
     public Staff fetchStaffByEmail(String email) {
         return this.staffRepository.findByEmail(email);
     }

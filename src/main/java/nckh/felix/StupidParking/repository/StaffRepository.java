@@ -23,6 +23,10 @@ public interface StaffRepository extends JpaRepository<Staff, String> {
     // Tìm staff theo account
     Staff findByAccount(Account account);
 
+    // Tìm staff theo username của account
+    @Query("SELECT s FROM Staff s WHERE s.account.username = :username")
+    Staff findByAccountUsername(@Param("username") String username);
+
     // Tìm staff theo email
     Staff findByEmail(String email);
 
