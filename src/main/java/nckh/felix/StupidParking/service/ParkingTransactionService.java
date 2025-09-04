@@ -26,17 +26,20 @@ public class ParkingTransactionService {
     private final StaffService staffService;
     private final PriceService priceService;
     private final VehicleService vehicleService;
+    private final VehicleTypeService vehicleTypeService;
 
     public ParkingTransactionService(ParkingTransactionRepository parkingTransactionRepository,
             ParkingLotService parkingLotService,
             StaffService staffService,
             PriceService priceService,
-            VehicleService vehicleService) {
+            VehicleService vehicleService,
+            VehicleTypeService vehicleTypeService) {
         this.parkingTransactionRepository = parkingTransactionRepository;
         this.parkingLotService = parkingLotService;
         this.staffService = staffService;
         this.priceService = priceService;
         this.vehicleService = vehicleService;
+        this.vehicleTypeService = vehicleTypeService;
     }
 
     /**
@@ -55,6 +58,12 @@ public class ParkingTransactionService {
             throw new IllegalArgumentException("Không tìm thấy bãi đỗ: " + maBaiDo);
         }
 
+        // KIỂM TRA LOẠI XE CÓ PHÙ HỢP VỚI BÃI ĐỖ KHÔNG
+        if (!parkingLot.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+            throw new IllegalArgumentException("Loại xe " + maLoaiXe + " không phù hợp với bãi đỗ " + maBaiDo
+                    + " (chỉ dành cho " + parkingLot.getMaLoaiXe().getMaLoaiXe() + ")");
+        }
+
         if (!parkingLot.canPark()) {
             throw new IllegalStateException("Bãi đỗ không thể nhận thêm xe");
         }
@@ -62,12 +71,24 @@ public class ParkingTransactionService {
         // Kiểm tra và tạo Vehicle mới nếu chưa tồn tại
         Vehicle vehicle = vehicleService.fetchVehicleByBienSoXe(bienSoXe);
         if (vehicle == null) {
+            // KIỂM TRA LOẠI XE CÓ TỒN TẠI KHÔNG
+            VehicleType vehicleType = vehicleTypeService.fetchVehicleTypeByMaLoaiXe(maLoaiXe);
+            if (vehicleType == null) {
+                throw new IllegalArgumentException("Không tìm thấy loại xe: " + maLoaiXe);
+            }
+
             // Tạo xe mới với thông tin cơ bản
             vehicle = new Vehicle();
             vehicle.setBienSoXe(bienSoXe);
-            vehicle.setMaLoaiXe(new VehicleType(maLoaiXe));
+            vehicle.setMaLoaiXe(vehicleType);
             vehicle.setTenXe("Xe " + maLoaiXe + " - " + bienSoXe); // Tên mặc định
             vehicle = vehicleService.handleCreateVehicle(vehicle);
+        } else {
+            // KIỂM TRA LOẠI XE CỦA XE ĐÃ TỒN TẠI CÓ KHỚP KHÔNG
+            if (!vehicle.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+                throw new IllegalArgumentException("Xe " + bienSoXe + " là loại " + vehicle.getMaLoaiXe().getMaLoaiXe()
+                        + ", không phải " + maLoaiXe);
+            }
         }
 
         // Tạo giao dịch mới
@@ -83,6 +104,82 @@ public class ParkingTransactionService {
     }
 
     /**
+     * CHO XE VÀO TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
+     * Kết hợp tạo yêu cầu và duyệt vào trong 1 bước
+     */
+    public ParkingTransaction directVehicleEntry(String bienSoXe, String maBaiDo, String maLoaiXe, String maNhanVien,
+            String ghiChu) throws IdInvalidException {
+        // Kiểm tra xe có đang đỗ trong bãi không
+        if (parkingTransactionRepository.countVehicleCurrentlyParked(bienSoXe) > 0) {
+            throw new IllegalStateException("Xe " + bienSoXe + " đang đỗ trong bãi");
+        }
+
+        // Kiểm tra nhân viên
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null) {
+            throw new IllegalArgumentException("Không tìm thấy nhân viên: " + maNhanVien);
+        }
+
+        // Kiểm tra bãi đỗ
+        ParkingLot parkingLot = parkingLotService.fetchParkingLotByMaBaiDo(maBaiDo);
+        if (parkingLot == null) {
+            throw new IllegalArgumentException("Không tìm thấy bãi đỗ: " + maBaiDo);
+        }
+
+        // KIỂM TRA LOẠI XE CÓ PHÙ HỢP VỚI BÃI ĐỖ KHÔNG
+        if (!parkingLot.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+            throw new IllegalArgumentException("Loại xe " + maLoaiXe + " không phù hợp với bãi đỗ " + maBaiDo
+                    + " (chỉ dành cho " + parkingLot.getMaLoaiXe().getMaLoaiXe() + ")");
+        }
+
+        if (!parkingLot.canPark()) {
+            throw new IllegalStateException("Bãi đỗ không thể nhận thêm xe");
+        }
+
+        // Kiểm tra và tạo Vehicle mới nếu chưa tồn tại
+        Vehicle vehicle = vehicleService.fetchVehicleByBienSoXe(bienSoXe);
+        if (vehicle == null) {
+            // KIỂM TRA LOẠI XE CÓ TỒN TẠI KHÔNG
+            VehicleType vehicleType = vehicleTypeService.fetchVehicleTypeByMaLoaiXe(maLoaiXe);
+            if (vehicleType == null) {
+                throw new IllegalArgumentException("Không tìm thấy loại xe: " + maLoaiXe);
+            }
+
+            // Tạo xe mới với thông tin cơ bản
+            vehicle = new Vehicle();
+            vehicle.setBienSoXe(bienSoXe);
+            vehicle.setMaLoaiXe(vehicleType);
+            vehicle.setTenXe("Xe " + maLoaiXe + " - " + bienSoXe); // Tên mặc định
+            vehicle = vehicleService.handleCreateVehicle(vehicle);
+        } else {
+            // KIỂM TRA LOẠI XE CỦA XE ĐÃ TỒN TẠI CÓ KHỚP KHÔNG
+            if (!vehicle.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+                throw new IllegalArgumentException("Xe " + bienSoXe + " là loại " + vehicle.getMaLoaiXe().getMaLoaiXe()
+                        + ", không phải " + maLoaiXe);
+            }
+        }
+
+        // Tạo giao dịch và CHO VÀO TRỰC TIẾP
+        ParkingTransaction transaction = new ParkingTransaction();
+        transaction.setBienSoXe(bienSoXe);
+        transaction.setParkingLot(parkingLot);
+        transaction.setVehicleType(vehicle.getMaLoaiXe());
+        transaction.setThoiGianVao(LocalDateTime.now());
+        transaction.setGhiChu(ghiChu);
+
+        // DUYỆT VÀO NGAY LẬP TỨC
+        transaction.approveEntry(staff);
+
+        // Lưu giao dịch trước
+        transaction = parkingTransactionRepository.save(transaction);
+
+        // Cập nhật số lượng xe trong bãi đỗ
+        parkingLotService.handleParkVehicle(parkingLot.getMaBaiDo());
+
+        return transaction;
+    }
+
+    /**
      * Duyệt xe vào bãi đỗ
      */
     public ParkingTransaction approveEntry(Long maGiaoDich, String maNhanVien) throws IdInvalidException {
@@ -90,6 +187,12 @@ public class ParkingTransactionService {
 
         if (transaction.getTrangThai() != TrangThaiGiaoDich.PENDING_IN) {
             throw new IllegalStateException("Giao dịch không ở trạng thái chờ duyệt vào");
+        }
+
+        // KIỂM TRA XE CÓ ĐANG ĐỖ TRONG BÃI KHÔNG (FIX LỖI)
+        if (parkingTransactionRepository.countVehicleCurrentlyParked(transaction.getBienSoXe()) > 0) {
+            throw new IllegalStateException(
+                    "Xe " + transaction.getBienSoXe() + " đang đỗ trong bãi, không thể duyệt vào thêm");
         }
 
         Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
@@ -167,7 +270,13 @@ public class ParkingTransactionService {
         BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
                 transaction.getVehicleType().getMaLoaiXe());
 
-        return hourlyRate.multiply(BigDecimal.valueOf(hours));
+        BigDecimal calculatedFee = hourlyRate.multiply(BigDecimal.valueOf(hours));
+
+        // CẬP NHẬT SỐ TIỀN VÀO GIAO DỊCH
+        transaction.setSoTien(calculatedFee);
+        parkingTransactionRepository.save(transaction);
+
+        return calculatedFee;
     }
 
     /**
