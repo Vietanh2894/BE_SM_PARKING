@@ -89,6 +89,44 @@ public class ParkingTransactionController {
     }
 
     /**
+     * CHO XE RA TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
+     * API kết hợp tạo yêu cầu và duyệt ra trong 1 bước
+     */
+    @PostMapping("/direct-exit")
+    public ResponseEntity<?> directVehicleExit(@RequestBody Map<String, String> request) {
+        try {
+            String bienSoXe = request.get("bienSoXe");
+            String soTienStr = request.get("soTienThanhToan");
+
+            // Lấy thông tin nhân viên từ token
+            String currentStaffUsername = getCurrentStaffUsername();
+            Staff staff = staffService.fetchStaffByUsername(currentStaffUsername);
+
+            if (staff == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên"));
+            }
+
+            // Parse số tiền thanh toán (có thể null để tính tự động)
+            BigDecimal soTienThanhToan = soTienStr != null && !soTienStr.trim().isEmpty()
+                    ? new BigDecimal(soTienStr)
+                    : null;
+
+            ParkingTransaction transaction = parkingTransactionService.directVehicleExit(
+                    bienSoXe, staff.getMaNV(), soTienThanhToan);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Xe đã được cho ra bãi đỗ và thanh toán thành công",
+                    "transaction", transaction,
+                    "soTienThanhToan", transaction.getSoTienThanhToan()));
+        } catch (IdInvalidException | IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()));
+        }
+    }
+
+    /**
      * Duyệt xe vào bãi đỗ
      */
     @PostMapping("/{maGiaoDich}/approve-entry")

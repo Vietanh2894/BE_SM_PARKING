@@ -145,15 +145,30 @@ public class ParkingTransaction {
         this.trangThai = TrangThaiGiaoDich.CANCELLED;
     }
 
-    // Calculate parking duration in hours
+    // Calculate parking duration in hours (round up only if over 30 minutes)
     public long getParkingDurationInHours() {
         if (thoiGianVao == null)
             return 0;
         LocalDateTime endTime = thoiGianRa != null ? thoiGianRa : LocalDateTime.now();
-        return java.time.Duration.between(thoiGianVao, endTime).toHours();
-    }
 
-    // Getters and Setters
+        // Tính tổng số phút gửi xe
+        long totalMinutes = java.time.Duration.between(thoiGianVao, endTime).toMinutes();
+
+        // Tính số giờ đầy đủ
+        long fullHours = totalMinutes / 60;
+
+        // Tính số phút lẻ
+        long remainingMinutes = totalMinutes % 60;
+
+        // Chỉ cộng thêm 1 giờ nếu phút lẻ > 30
+        if (remainingMinutes > 30) {
+            fullHours++;
+        }
+
+        // Tối thiểu 1 giờ
+        return Math.max(fullHours, 1);
+    } // Getters and Setters
+
     public Long getMaGiaoDich() {
         return maGiaoDich;
     }

@@ -257,14 +257,66 @@ public class ParkingTransactionService {
     }
 
     /**
+     * CHO XE RA TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
+     * Kết hợp tạo yêu cầu và duyệt ra trong 1 bước
+     */
+    public ParkingTransaction directVehicleExit(String bienSoXe, String maNhanVien, BigDecimal soTienThanhToan)
+            throws IdInvalidException {
+        // 1. Kiểm tra xe có đang đỗ trong bãi không
+        Optional<ParkingTransaction> activeTransactionOpt = parkingTransactionRepository
+                .findActiveTransactionByBienSoXe(bienSoXe);
+
+        if (activeTransactionOpt.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy xe " + bienSoXe + " trong bãi đỗ");
+        }
+
+        ParkingTransaction transaction = activeTransactionOpt.get();
+
+        // 2. Kiểm tra giao dịch đang active
+        if (transaction.getTrangThai() != TrangThaiGiaoDich.APPROVED_IN) {
+            throw new IllegalStateException("Xe " + bienSoXe + " không ở trạng thái đang đỗ trong bãi");
+        }
+
+        // 3. Xác thực nhân viên
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null) {
+            throw new IllegalArgumentException("Không tìm thấy nhân viên: " + maNhanVien);
+        }
+
+        // 4. Cập nhật thời gian ra
+        transaction.setThoiGianRa(LocalDateTime.now());
+
+        // 5. Tính toán tiền đỗ xe (nếu không được cung cấp)
+        if (soTienThanhToan == null) {
+            long hours = transaction.getParkingDurationInHours();
+            // Không cần check tối thiểu 1 giờ nữa vì đã xử lý trong
+            // getParkingDurationInHours()
+
+            // Lấy giá từ bảng Price theo loại xe
+            BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
+                    transaction.getVehicleType().getMaLoaiXe());
+
+            soTienThanhToan = hourlyRate.multiply(BigDecimal.valueOf(hours));
+        }
+
+        // 6. Hoàn thành giao dịch và ghi nhận nhân viên + số tiền
+        transaction.completeTransaction(staff, soTienThanhToan);
+
+        // 7. Cập nhật số chỗ trống trong bãi đỗ
+        parkingLotService.handleUnparkVehicle(transaction.getParkingLot().getMaBaiDo());
+
+        return parkingTransactionRepository.save(transaction);
+    }
+
+    /**
      * Tính tiền đỗ xe tự động
      */
     public BigDecimal calculateParkingFee(Long maGiaoDich) throws IdInvalidException {
         ParkingTransaction transaction = fetchTransactionById(maGiaoDich);
 
         long hours = transaction.getParkingDurationInHours();
-        if (hours < 1)
-            hours = 1; // Tối thiểu 1 giờ
+        // Không cần check tối thiểu 1 giờ nữa vì đã xử lý trong
+        // getParkingDurationInHours()
 
         // Lấy giá từ bảng Price theo loại xe
         BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
