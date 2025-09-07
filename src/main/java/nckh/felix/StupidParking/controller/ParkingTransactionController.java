@@ -35,26 +35,6 @@ public class ParkingTransactionController {
     }
 
     /**
-     * Tạo yêu cầu xe vào bãi đỗ
-     */
-    @PostMapping("/entry-request")
-    public ResponseEntity<?> createEntryRequest(@RequestBody Map<String, String> request) {
-        try {
-            String bienSoXe = request.get("bienSoXe");
-            String maBaiDo = request.get("maBaiDo");
-            String maLoaiXe = request.get("maLoaiXe");
-            String ghiChu = request.get("ghiChu");
-
-            ParkingTransaction transaction = parkingTransactionService.createEntryRequest(
-                    bienSoXe, maBaiDo, maLoaiXe, ghiChu);
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(transaction);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /**
      * CHO XE VÀO TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
      * API kết hợp tạo yêu cầu và duyệt vào trong 1 bước
      */
@@ -151,69 +131,6 @@ public class ParkingTransactionController {
     }
 
     /**
-     * Duyệt xe vào bãi đỗ
-     */
-    @PostMapping("/{maGiaoDich}/approve-entry")
-    public ResponseEntity<?> approveEntry(@PathVariable("maGiaoDich") Long maGiaoDich) {
-        try {
-            // Lấy thông tin nhân viên từ token
-            String currentStaffUsername = getCurrentStaffUsername();
-            Staff staff = staffService.fetchStaffByUsername(currentStaffUsername);
-
-            if (staff == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên"));
-            }
-
-            ParkingTransaction transaction = parkingTransactionService.approveEntry(maGiaoDich, staff.getMaNV());
-            return ResponseEntity.ok(transaction);
-        } catch (IdInvalidException | IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /**
-     * Tạo yêu cầu xe ra
-     */
-    @PostMapping("/exit-request")
-    public ResponseEntity<?> createExitRequest(@RequestBody Map<String, String> request) {
-        try {
-            String bienSoXe = request.get("bienSoXe");
-
-            ParkingTransaction transaction = parkingTransactionService.createExitRequest(bienSoXe);
-            return ResponseEntity.ok(transaction);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /**
-     * Duyệt xe ra và thanh toán
-     */
-    @PostMapping("/{maGiaoDich}/approve-exit")
-    public ResponseEntity<?> approveExit(@PathVariable("maGiaoDich") Long maGiaoDich,
-            @RequestBody Map<String, String> request) {
-        try {
-            // Lấy thông tin nhân viên từ token
-            String currentStaffUsername = getCurrentStaffUsername();
-            Staff staff = staffService.fetchStaffByUsername(currentStaffUsername);
-
-            if (staff == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên"));
-            }
-
-            String soTienStr = request.get("soTienThanhToan");
-            BigDecimal soTienThanhToan = soTienStr != null ? new BigDecimal(soTienStr) : null;
-
-            ParkingTransaction transaction = parkingTransactionService.approveExit(
-                    maGiaoDich, staff.getMaNV(), soTienThanhToan);
-
-            return ResponseEntity.ok(transaction);
-        } catch (IdInvalidException | IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /**
      * Tính tiền đỗ xe tự động
      */
     @GetMapping("/{maGiaoDich}/calculate-fee")
@@ -266,22 +183,6 @@ public class ParkingTransactionController {
     @GetMapping
     public ResponseEntity<List<ParkingTransaction>> getAllTransactions() {
         return ResponseEntity.ok(parkingTransactionService.fetchAllTransactions());
-    }
-
-    /**
-     * Lấy danh sách giao dịch chờ duyệt vào
-     */
-    @GetMapping("/pending-in")
-    public ResponseEntity<List<ParkingTransaction>> getPendingInTransactions() {
-        return ResponseEntity.ok(parkingTransactionService.fetchPendingInTransactions());
-    }
-
-    /**
-     * Lấy danh sách giao dịch chờ duyệt ra
-     */
-    @GetMapping("/pending-out")
-    public ResponseEntity<List<ParkingTransaction>> getPendingOutTransactions() {
-        return ResponseEntity.ok(parkingTransactionService.fetchPendingOutTransactions());
     }
 
     /**
