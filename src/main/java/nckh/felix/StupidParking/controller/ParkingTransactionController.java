@@ -89,6 +89,30 @@ public class ParkingTransactionController {
     }
 
     /**
+     * KIỂM TRA TRẠNG THÁI XE KHI QUÉT BIỂN SỐ
+     * API để kiểm tra xe có đăng ký tháng không và có thể vào bãi không
+     */
+    @GetMapping("/check-vehicle-status/{bienSoXe}")
+    public ResponseEntity<?> checkVehicleStatus(@PathVariable("bienSoXe") String bienSoXe) {
+        try {
+            ParkingTransactionService.VehicleEntryStatus status = parkingTransactionService
+                    .checkVehicleEntryStatus(bienSoXe);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "bienSoXe", status.getBienSoXe(),
+                    "hasActiveMonthlyRegistration", status.isHasActiveMonthlyRegistration(),
+                    "isCurrentlyParked", status.isCurrentlyParked(),
+                    "canEnter", status.canEnter(),
+                    "message", status.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()));
+        }
+    }
+
+    /**
      * CHO XE RA TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
      * API kết hợp tạo yêu cầu và duyệt ra trong 1 bước
      */

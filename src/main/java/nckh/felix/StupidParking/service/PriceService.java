@@ -67,4 +67,43 @@ public class PriceService {
         // Giá mặc định nếu không tìm thấy
         return BigDecimal.valueOf(10000); // 10,000 VND/giờ
     }
+
+    /**
+     * Tính giá đăng ký tháng cho loại xe
+     * 
+     * @param maLoaiXe Mã loại xe (CAR, MOTOR, TRUCK...)
+     * @param soThang  Số tháng đăng ký
+     * @return Tổng số tiền thanh toán cho đăng ký tháng
+     */
+    public BigDecimal calculateMonthlyPrice(String maLoaiXe, Integer soThang) {
+        VehicleType vehicleType = new VehicleType(maLoaiXe);
+
+        // Tìm giá theo loại xe và hình thức đỗ tháng
+        // Giả sử có mã hình thức "MONTHLY" hoặc "THANG" cho đỗ xe theo tháng
+        List<Price> prices = this.priceRepository.findByMaLoaiXe(vehicleType);
+
+        BigDecimal monthlyRate = null;
+
+        // Tìm giá cho hình thức đỗ tháng (HT002)
+        for (Price price : prices) {
+            String maHinhThuc = price.getMaHinhThuc().getMaHinhThuc();
+            if ("HT002".equals(maHinhThuc)) {
+                monthlyRate = price.getGia();
+                break;
+            }
+        }
+
+        // Nếu không tìm thấy giá theo tháng, tính dựa trên giá theo giờ
+        if (monthlyRate == null) {
+            BigDecimal hourlyRate = getHourlyRateByVehicleType(maLoaiXe);
+            // Giả sử 1 tháng = 30 ngày * 12 giờ/ngày = 360 giờ, nhưng giảm 50% cho gói
+            // tháng
+            monthlyRate = hourlyRate.multiply(BigDecimal.valueOf(360)).multiply(BigDecimal.valueOf(0.5));
+        }
+
+        // Tính tổng tiền theo số tháng
+        BigDecimal totalPrice = monthlyRate.multiply(BigDecimal.valueOf(soThang));
+
+        return totalPrice;
+    }
 }

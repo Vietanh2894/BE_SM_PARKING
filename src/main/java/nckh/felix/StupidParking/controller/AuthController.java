@@ -10,19 +10,24 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import nckh.felix.StupidParking.domain.Staff;
 import nckh.felix.StupidParking.domain.dto.LoginDTO;
 import nckh.felix.StupidParking.domain.dto.ResLoginDTO;
 import nckh.felix.StupidParking.domain.dto.ResLogoutDTO;
+import nckh.felix.StupidParking.service.StaffService;
 import nckh.felix.StupidParking.util.SecurityUtil;
 
 @RestController
 public class AuthController {
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
     private final SecurityUtil securityUtil;
+    private final StaffService staffService;
 
-    public AuthController(AuthenticationManagerBuilder authenticationManagerBuilder, SecurityUtil securityUtil) {
+    public AuthController(AuthenticationManagerBuilder authenticationManagerBuilder,
+            SecurityUtil securityUtil, StaffService staffService) {
         this.authenticationManagerBuilder = authenticationManagerBuilder;
         this.securityUtil = securityUtil;
+        this.staffService = staffService;
     }
 
     @PostMapping("/login")
@@ -35,12 +40,21 @@ public class AuthController {
         // xác thực người dùng => chỉ Staff account mới được authenticate
         Authentication authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
 
+        // Lấy thông tin staff theo username
+        Staff staff = staffService.fetchStaffByUsername(loginDTO.getUsername());
+
         // Tạo JWT token cho Staff
         String access_token = this.securityUtil.createToken(authentication);
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        ResLoginDTO res = new ResLoginDTO();
-        res.setAccessToken(access_token);
+        // Tạo thông tin staff cho response
+        ResLoginDTO.StaffInfo staffInfo = new ResLoginDTO.StaffInfo(
+                staff.getMaNV(),
+                staff.getHoTen(),
+                staff.getEmail(),
+                staff.getChucVu().toString());
+
+        ResLoginDTO res = new ResLoginDTO(access_token, "STAFF", staffInfo);
         return ResponseEntity.ok().body(res);
     }
 

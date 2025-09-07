@@ -37,6 +37,10 @@ public class VehicleService {
         if (currentVehicle != null) {
             currentVehicle.setTenXe(reqVehicle.getTenXe());
             currentVehicle.setMaLoaiXe(reqVehicle.getMaLoaiXe());
+            // Cập nhật owner nếu có
+            if (reqVehicle.getOwner() != null) {
+                currentVehicle.setOwner(reqVehicle.getOwner());
+            }
             currentVehicle = this.vehicleRepository.save(currentVehicle);
         }
         return currentVehicle;

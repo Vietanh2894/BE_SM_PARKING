@@ -27,19 +27,22 @@ public class ParkingTransactionService {
     private final PriceService priceService;
     private final VehicleService vehicleService;
     private final VehicleTypeService vehicleTypeService;
+    private final DangKyThangService dangKyThangService;
 
     public ParkingTransactionService(ParkingTransactionRepository parkingTransactionRepository,
             ParkingLotService parkingLotService,
             StaffService staffService,
             PriceService priceService,
             VehicleService vehicleService,
-            VehicleTypeService vehicleTypeService) {
+            VehicleTypeService vehicleTypeService,
+            DangKyThangService dangKyThangService) {
         this.parkingTransactionRepository = parkingTransactionRepository;
         this.parkingLotService = parkingLotService;
         this.staffService = staffService;
         this.priceService = priceService;
         this.vehicleService = vehicleService;
         this.vehicleTypeService = vehicleTypeService;
+        this.dangKyThangService = dangKyThangService;
     }
 
     /**
@@ -159,6 +162,9 @@ public class ParkingTransactionService {
             }
         }
 
+        // KIỂM TRA ĐĂNG KÝ THÁNG
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(bienSoXe);
+
         // Tạo giao dịch và CHO VÀO TRỰC TIẾP
         ParkingTransaction transaction = new ParkingTransaction();
         transaction.setBienSoXe(bienSoXe);
@@ -166,6 +172,12 @@ public class ParkingTransactionService {
         transaction.setVehicleType(vehicle.getMaLoaiXe());
         transaction.setThoiGianVao(LocalDateTime.now());
         transaction.setGhiChu(ghiChu);
+
+        // Ghi chú nếu xe có đăng ký tháng
+        if (hasActiveMonthlyRegistration) {
+            String monthlyNote = " [Xe có đăng ký tháng - Miễn phí]";
+            transaction.setGhiChu((ghiChu != null ? ghiChu : "") + monthlyNote);
+        }
 
         // DUYỆT VÀO NGAY LẬP TỨC
         transaction.approveEntry(staff);
@@ -247,6 +259,16 @@ public class ParkingTransactionService {
             throw new IllegalArgumentException("Không tìm thấy nhân viên: " + maNhanVien);
         }
 
+        // Kiểm tra đăng ký tháng để áp dụng logic tính phí
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(transaction.getBienSoXe());
+
+        if (hasActiveMonthlyRegistration) {
+            // Xe có đăng ký tháng - Miễn phí
+            soTienThanhToan = BigDecimal.ZERO;
+            String monthlyNote = " [Xe có đăng ký tháng - Miễn phí]";
+            transaction.setGhiChu((transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + monthlyNote);
+        }
+
         // Hoàn thành giao dịch
         transaction.completeTransaction(staff, soTienThanhToan);
 
@@ -286,17 +308,23 @@ public class ParkingTransactionService {
         // 4. Cập nhật thời gian ra
         transaction.setThoiGianRa(LocalDateTime.now());
 
-        // 5. Tính toán tiền đỗ xe (nếu không được cung cấp)
-        if (soTienThanhToan == null) {
-            long hours = transaction.getParkingDurationInHours();
-            // Không cần check tối thiểu 1 giờ nữa vì đã xử lý trong
-            // getParkingDurationInHours()
+        // 5. Kiểm tra đăng ký tháng để áp dụng logic tính phí
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(bienSoXe);
 
-            // Lấy giá từ bảng Price theo loại xe
-            BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
-                    transaction.getVehicleType().getMaLoaiXe());
-
-            soTienThanhToan = hourlyRate.multiply(BigDecimal.valueOf(hours));
+        if (hasActiveMonthlyRegistration) {
+            // Xe có đăng ký tháng - Miễn phí
+            soTienThanhToan = BigDecimal.ZERO;
+            String monthlyNote = " [Xe có đăng ký tháng - Miễn phí]";
+            transaction.setGhiChu((transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + monthlyNote);
+        } else {
+            // Xe vãng lai - Tính phí bình thường
+            if (soTienThanhToan == null) {
+                long hours = transaction.getParkingDurationInHours();
+                // Lấy giá từ bảng Price theo loại xe
+                BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
+                        transaction.getVehicleType().getMaLoaiXe());
+                soTienThanhToan = hourlyRate.multiply(BigDecimal.valueOf(hours));
+            }
         }
 
         // 6. Hoàn thành giao dịch và ghi nhận nhân viên + số tiền
@@ -411,5 +439,87 @@ public class ParkingTransactionService {
         if (parkingLot == null)
             return 0L;
         return parkingTransactionRepository.countActiveTransactionsByParkingLot(parkingLot);
+    }
+
+    // === MONTHLY REGISTRATION METHODS ===
+
+    /**
+     * Kiểm tra trạng thái đăng ký tháng của xe khi quét biển số
+     * 
+     * @param bienSoXe Biển số xe cần kiểm tra
+     * @return Thông tin về trạng thái đăng ký tháng và khả năng vào bãi
+     */
+    public VehicleEntryStatus checkVehicleEntryStatus(String bienSoXe) {
+        // Kiểm tra xe có đang đỗ trong bãi không
+        boolean isCurrentlyParked = isVehicleCurrentlyParked(bienSoXe);
+
+        // Kiểm tra đăng ký tháng
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(bienSoXe);
+
+        return new VehicleEntryStatus(bienSoXe, hasActiveMonthlyRegistration, isCurrentlyParked);
+    }
+
+    /**
+     * Class để trả về thông tin trạng thái xe
+     */
+    public static class VehicleEntryStatus {
+        private String bienSoXe;
+        private boolean hasActiveMonthlyRegistration;
+        private boolean isCurrentlyParked;
+        private String message;
+
+        public VehicleEntryStatus(String bienSoXe, boolean hasActiveMonthlyRegistration, boolean isCurrentlyParked) {
+            this.bienSoXe = bienSoXe;
+            this.hasActiveMonthlyRegistration = hasActiveMonthlyRegistration;
+            this.isCurrentlyParked = isCurrentlyParked;
+            generateMessage();
+        }
+
+        private void generateMessage() {
+            if (isCurrentlyParked) {
+                message = "Xe đang đỗ trong bãi";
+            } else if (hasActiveMonthlyRegistration) {
+                message = "Xe có đăng ký tháng còn hiệu lực - Cho vào miễn phí";
+            } else {
+                message = "Xe vãng lai - Áp dụng tính phí theo giờ";
+            }
+        }
+
+        // Getters and setters
+        public String getBienSoXe() {
+            return bienSoXe;
+        }
+
+        public void setBienSoXe(String bienSoXe) {
+            this.bienSoXe = bienSoXe;
+        }
+
+        public boolean isHasActiveMonthlyRegistration() {
+            return hasActiveMonthlyRegistration;
+        }
+
+        public void setHasActiveMonthlyRegistration(boolean hasActiveMonthlyRegistration) {
+            this.hasActiveMonthlyRegistration = hasActiveMonthlyRegistration;
+        }
+
+        public boolean isCurrentlyParked() {
+            return isCurrentlyParked;
+        }
+
+        public void setCurrentlyParked(boolean currentlyParked) {
+            isCurrentlyParked = currentlyParked;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = message;
+        }
+
+        public boolean canEnter() {
+            return !isCurrentlyParked;
+        }
     }
 }
