@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 import nckh.felix.StupidParking.domain.DangKyThang;
 import nckh.felix.StupidParking.domain.dto.DangKyThangCreateDTO;
+import nckh.felix.StupidParking.domain.dto.DangKyThangUpdateDTO;
 import nckh.felix.StupidParking.service.DangKyThangService;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
 
@@ -133,13 +134,13 @@ public class DangKyThangController {
     }
 
     /**
-     * Cập nhật thông tin đăng ký tháng
-     * Chỉ Staff (Admin và Bảo vệ) mới có quyền cập nhật
+     * Cập nhật số tháng đăng ký (chỉ cho phép giảm) và tính lại tiền
+     * Để cập nhật thông tin cá nhân/xe, vui lòng sử dụng API User/Vehicle
      */
     @PutMapping("/dang-ky-thang/{id}")
     // @PreAuthorize("hasRole('ADMIN') or hasRole('BAO_VE')")
     public ResponseEntity<?> updateDangKyThang(@PathVariable("id") Long id,
-            @Valid @RequestBody DangKyThangCreateDTO updateDTO) {
+            @Valid @RequestBody DangKyThangUpdateDTO updateDTO) {
         try {
             DangKyThang updatedDangKyThang = dangKyThangService.handleUpdateDangKyThang(id, updateDTO);
             return ResponseEntity.ok(updatedDangKyThang);
@@ -152,8 +153,7 @@ public class DangKyThangController {
     }
 
     /**
-     * Gia hạn đăng ký tháng
-     * Chỉ Staff (Admin và Bảo vệ) mới có quyền gia hạn
+     * Gia hạn đăng ký tháng (nối tiếp thời gian hết hạn hiện tại)
      */
     @PutMapping("/dang-ky-thang/{id}/extend")
     // @PreAuthorize("hasRole('ADMIN') or hasRole('BAO_VE')")
@@ -173,7 +173,6 @@ public class DangKyThangController {
 
     /**
      * Gia hạn đăng ký tháng (tạo mới cho xe đã hết hạn)
-     * Chỉ Staff (Admin và Bảo vệ) mới có quyền gia hạn
      */
     @PostMapping("/dang-ky-thang/renew")
     // @PreAuthorize("hasRole('ADMIN') or hasRole('BAO_VE')")

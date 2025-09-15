@@ -23,6 +23,9 @@ public class Vehicle {
     @Column(name = "TenXe", length = 100)
     private String tenXe;
 
+    @Column(name = "SoCavet", length = 50)
+    private String soCavet;
+
     // nhiều xe có thể thuộc về một loại xe
     @ManyToOne
     @JoinColumn(name = "MaLoaiXe", nullable = false)
@@ -77,6 +80,14 @@ public class Vehicle {
         this.tenXe = tenXe;
     }
 
+    public String getSoCavet() {
+        return soCavet;
+    }
+
+    public void setSoCavet(String soCavet) {
+        this.soCavet = soCavet;
+    }
+
     public User getOwner() {
         return owner;
     }
@@ -87,7 +98,8 @@ public class Vehicle {
 
     @Override
     public String toString() {
-        return "Vehicle [bienSoXe=" + bienSoXe + ", tenXe=" + tenXe + ", maLoaiXe=" + maLoaiXe + ", createdDate="
+        return "Vehicle [bienSoXe=" + bienSoXe + ", tenXe=" + tenXe + ", soCavet=" + soCavet + ", maLoaiXe=" + maLoaiXe
+                + ", createdDate="
                 + createdDate + ", owner=" + owner + "]";
     }
 
