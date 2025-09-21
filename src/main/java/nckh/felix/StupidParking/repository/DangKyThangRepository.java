@@ -74,4 +74,18 @@ public interface DangKyThangRepository extends JpaRepository<DangKyThang, Long> 
         @Query("SELECT d FROM DangKyThang d WHERE d.soCavet = :soCavet AND d.trangThai = 'ACTIVE' AND d.thoiGianHetHan > :currentTime")
         List<DangKyThang> findActiveDangKyThangBySoCavet(@Param("soCavet") String soCavet,
                         @Param("currentTime") LocalDateTime currentTime);
+
+        // ============== EXTENSION CHAIN METHODS ==============
+
+        // Tìm toàn bộ chuỗi gia hạn (root + all extensions) theo root ID
+        @Query("SELECT d FROM DangKyThang d WHERE d.id = :rootId OR d.parentId = :rootId ORDER BY d.lanGiaHan ASC, d.createdDate ASC")
+        List<DangKyThang> findExtensionChain(@Param("rootId") Long rootId);
+
+        // Tìm tất cả extensions của một đăng ký root
+        @Query("SELECT d FROM DangKyThang d WHERE d.parentId = :rootId ORDER BY d.lanGiaHan ASC, d.createdDate ASC")
+        List<DangKyThang> findExtensionsByRoot(@Param("rootId") Long rootId);
+
+        // Tìm đăng ký root (parentId is null) theo biển số xe
+        @Query("SELECT d FROM DangKyThang d WHERE d.bienSoXe = :bienSoXe AND d.parentId IS NULL ORDER BY d.createdDate DESC")
+        List<DangKyThang> findRootRegistrationsByBienSoXe(@Param("bienSoXe") String bienSoXe);
 }

@@ -16,8 +16,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
 import nckh.felix.StupidParking.domain.DangKyThang;
+import nckh.felix.StupidParking.domain.Vehicle;
 import nckh.felix.StupidParking.domain.dto.DangKyThangCreateDTO;
 import nckh.felix.StupidParking.domain.dto.DangKyThangUpdateDTO;
+import nckh.felix.StupidParking.domain.dto.DangKyThangExtendDTO;
 import nckh.felix.StupidParking.service.DangKyThangService;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
 
@@ -153,16 +155,34 @@ public class DangKyThangController {
     }
 
     /**
-     * Gia hạn đăng ký tháng (nối tiếp thời gian hết hạn hiện tại)
+     * Gia hạn đăng ký tháng - Logic thông minh (Tạo record mới thay vì update)
+     * Tự động detect EXPIRED hoặc ACTIVE và áp dụng logic tương ứng
      */
-    @PutMapping("/dang-ky-thang/{id}/extend")
+    @PostMapping("/dang-ky-thang/{id}/extend")
     // @PreAuthorize("hasRole('ADMIN') or hasRole('BAO_VE')")
     public ResponseEntity<?> extendDangKyThang(@PathVariable("id") Long id,
-            @RequestParam("soThangMoi") Integer soThangMoi,
-            @RequestParam("maNhanVien") String maNhanVien) {
+            @Valid @RequestBody DangKyThangExtendDTO extendDTO) {
         try {
-            DangKyThang extendedDangKyThang = dangKyThangService.handleExtendDangKyThang(id, soThangMoi, maNhanVien);
-            return ResponseEntity.ok(extendedDangKyThang);
+            // Lấy thông tin đăng ký hiện tại để xác định trạng thái
+            DangKyThang currentDangKy = dangKyThangService.fetchDangKyThangById(id);
+            if (currentDangKy == null) {
+                return ResponseEntity.badRequest().body("Error: Không tìm thấy đăng ký tháng với ID: " + id);
+            }
+
+            DangKyThang newDangKy;
+            if (currentDangKy.isExpired()) {
+                // Gia hạn cho đăng ký EXPIRED
+                newDangKy = dangKyThangService.handleExtendExpiredDangKy(id, extendDTO.getNewMonths(),
+                        extendDTO.getMaNhanVien());
+            } else if (currentDangKy.isActive()) {
+                // Gia hạn cho đăng ký ACTIVE
+                newDangKy = dangKyThangService.handleExtendActiveDangKy(id, extendDTO.getNewMonths(),
+                        extendDTO.getMaNhanVien());
+            } else {
+                return ResponseEntity.badRequest().body("Error: Chỉ có thể gia hạn đăng ký ACTIVE hoặc EXPIRED");
+            }
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(newDangKy);
         } catch (IdInvalidException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
@@ -210,6 +230,113 @@ public class DangKyThangController {
     }
 
     /**
+     * API thanh toán - chuyển trạng thái từ PENDING sang COMPLETE
+     */
+    @PutMapping("/dang-ky-thang/{id}/payment")
+    public ResponseEntity<?> completePayment(@PathVariable("id") Long id) {
+        try {
+            DangKyThang completedDangKy = dangKyThangService.handleCompletePayment(id);
+            return ResponseEntity.ok(completedDangKy);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API lấy danh sách xe của User (để chọn xe cho đăng ký mới)
+     */
+    @GetMapping("/dang-ky-thang/user-vehicles")
+    public ResponseEntity<?> getUserVehicles(
+            @RequestParam("identifier") String identifier,
+            @RequestParam("identifierType") String identifierType) { // "email" hoặc "sdt"
+        try {
+            List<Vehicle> vehicles = dangKyThangService.getVehiclesByUser(identifier, identifierType);
+            return ResponseEntity.ok(vehicles);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API tạo đăng ký tháng cho User đã tồn tại (Loại B)
+     */
+    @PostMapping("/dang-ky-thang/existing-user")
+    public ResponseEntity<?> createDangKyThangForExistingUser(
+            @RequestParam("identifier") String identifier,
+            @RequestParam("identifierType") String identifierType, // "email" hoặc "sdt"
+            @Valid @RequestBody DangKyThangCreateDTO createDTO) {
+        try {
+            DangKyThang newDangKy = dangKyThangService.handleCreateDangKyThangForExistingUser(identifier,
+                    identifierType, createDTO);
+            return ResponseEntity.status(HttpStatus.CREATED).body(newDangKy);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API cập nhật số tháng cho đăng ký PENDING (có thể tăng hoặc giảm)
+     */
+    @PutMapping("/dang-ky-thang/{id}/update-months")
+    public ResponseEntity<?> updateMonthsForPending(@PathVariable("id") Long id,
+            @RequestParam("newMonthCount") Integer newMonthCount) {
+        try {
+            DangKyThang updatedDangKy = dangKyThangService.handleUpdateMonthsForPending(id, newMonthCount);
+            return ResponseEntity.ok(updatedDangKy);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API gia hạn cho đăng ký EXPIRED - Tạo record mới (Logic mới)
+     */
+    @PostMapping("/dang-ky-thang/{id}/extend-expired")
+    public ResponseEntity<?> extendExpiredDangKy(@PathVariable("id") Long id,
+            @Valid @RequestBody DangKyThangExtendDTO extendDTO) {
+        try {
+            DangKyThang newDangKy = dangKyThangService.handleExtendExpiredDangKy(id, extendDTO.getNewMonths(),
+                    extendDTO.getMaNhanVien());
+            return ResponseEntity.status(HttpStatus.CREATED).body(newDangKy);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API gia hạn cho đăng ký ACTIVE - Tạo record mới (Logic mới)
+     */
+    @PostMapping("/dang-ky-thang/{id}/extend-active")
+    public ResponseEntity<?> extendActiveDangKy(@PathVariable("id") Long id,
+            @Valid @RequestBody DangKyThangExtendDTO extendDTO) {
+        try {
+            DangKyThang newDangKy = dangKyThangService.handleExtendActiveDangKy(id, extendDTO.getNewMonths(),
+                    extendDTO.getMaNhanVien());
+            return ResponseEntity.status(HttpStatus.CREATED).body(newDangKy);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
      * Cập nhật trạng thái đăng ký tháng hết hạn
      * API này có thể được gọi định kỳ để cập nhật trạng thái
      */
@@ -239,6 +366,77 @@ public class DangKyThangController {
             return ResponseEntity.ok(dangKyThangs);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * Lấy toàn bộ chuỗi gia hạn của một đăng ký (root + extensions)
+     */
+    @GetMapping("/dang-ky-thang/{id}/extension-chain")
+    public ResponseEntity<?> getExtensionChain(@PathVariable("id") Long id) {
+        try {
+            List<DangKyThang> chain = dangKyThangService.getExtensionChain(id);
+            return ResponseEntity.ok(chain);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Lấy lịch sử gia hạn theo biển số xe (tất cả đăng ký và gia hạn)
+     */
+    @GetMapping("/dang-ky-thang/history/{bienSoXe}")
+    public ResponseEntity<?> getExtensionHistoryByBienSoXe(@PathVariable("bienSoXe") String bienSoXe) {
+        try {
+            List<DangKyThang> history = dangKyThangService.getExtensionHistoryByBienSoXe(bienSoXe);
+            return ResponseEntity.ok(history);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Fix dữ liệu cũ - cập nhật parentId về root ID cho các extension
+     * API này chỉ chạy 1 lần để fix data hiện tại
+     */
+    @PostMapping("/dang-ky-thang/fix-extension-parent-ids")
+    public ResponseEntity<?> fixExtensionParentIds() {
+        try {
+            // Tìm tất cả records và fix parentId
+            List<DangKyThang> allRecords = dangKyThangService.getAllDangKyThang();
+            int fixedCount = 0;
+
+            for (DangKyThang record : allRecords) {
+                if (record.isExtension()) {
+                    // Tìm root record
+                    DangKyThang current = record;
+                    while (!current.isRoot()) {
+                        DangKyThang parent = dangKyThangService.fetchDangKyThangById(current.getParentId());
+                        if (parent == null)
+                            break;
+                        current = parent;
+                    }
+
+                    // Nếu tìm thấy root và parentId hiện tại không đúng
+                    if (current.isRoot() && !current.getId().equals(record.getParentId())) {
+                        // Update parentId về root
+                        record.setParentId(current.getId());
+                        dangKyThangService.saveDangKyThang(record);
+                        fixedCount++;
+                    }
+                }
+            }
+
+            return ResponseEntity.ok("Đã fix " + fixedCount + " records extension parentId về root");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
         }
     }
 }

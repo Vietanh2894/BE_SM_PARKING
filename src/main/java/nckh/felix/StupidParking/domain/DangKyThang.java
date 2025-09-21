@@ -66,8 +66,8 @@ public class DangKyThang {
     private LocalDateTime thoiGianHetHan;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "trang_thai", nullable = false)
-    private TrangThaiDangKy trangThai = TrangThaiDangKy.ACTIVE;
+    @Column(name = "trang_thai", nullable = false, length = 20)
+    private TrangThaiDangKy trangThai = TrangThaiDangKy.PENDING;
 
     @Column(name = "created_date", nullable = false, updatable = false)
     private LocalDateTime createdDate;
@@ -83,8 +83,36 @@ public class DangKyThang {
     @PositiveOrZero(message = "Số tiền thanh toán phải lớn hơn hoặc bằng 0")
     private BigDecimal soTienThanhToan;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trang_thai_thanh_toan", nullable = false, length = 20)
+    private TrangThaiThanhToan trangThaiThanhToan = TrangThaiThanhToan.PENDING;
+
+    // Trường để quản lý lịch sử gia hạn
+    @Column(name = "parent_id")
+    private Long parentId; // NULL = đăng ký gốc, có giá trị = gia hạn từ đăng ký khác
+
+    @Column(name = "lan_gia_han", nullable = false)
+    private Integer lanGiaHan = 0; // 0 = đăng ký gốc, 1,2,3... = số lần gia hạn
+
+    // Enum for payment status
+    public enum TrangThaiThanhToan {
+        PENDING("Chờ thanh toán"),
+        PAID("Đã thanh toán");
+
+        private final String description;
+
+        TrangThaiThanhToan(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
     // Enum for registration status
     public enum TrangThaiDangKy {
+        PENDING("Chờ xử lý"),
         ACTIVE("Đang hiệu lực"),
         EXPIRED("Hết hạn"),
         CANCELLED("Đã hủy");
@@ -111,7 +139,10 @@ public class DangKyThang {
         createdDate = LocalDateTime.now();
         updatedDate = LocalDateTime.now();
         if (trangThai == null) {
-            trangThai = TrangThaiDangKy.ACTIVE;
+            trangThai = TrangThaiDangKy.PENDING;
+        }
+        if (trangThaiThanhToan == null) {
+            trangThaiThanhToan = TrangThaiThanhToan.PENDING;
         }
     }
 
@@ -123,6 +154,7 @@ public class DangKyThang {
     // Business logic methods
     public boolean isActive() {
         return trangThai == TrangThaiDangKy.ACTIVE &&
+                trangThaiThanhToan == TrangThaiThanhToan.PAID &&
                 thoiGianHetHan != null &&
                 LocalDateTime.now().isBefore(thoiGianHetHan);
     }
@@ -132,12 +164,49 @@ public class DangKyThang {
                 (thoiGianHetHan != null && LocalDateTime.now().isAfter(thoiGianHetHan));
     }
 
+    public boolean isPending() {
+        return trangThai == TrangThaiDangKy.PENDING || trangThaiThanhToan == TrangThaiThanhToan.PENDING;
+    }
+
+    public boolean canEdit() {
+        return trangThaiThanhToan == TrangThaiThanhToan.PENDING;
+    }
+
     public void expire() {
         this.trangThai = TrangThaiDangKy.EXPIRED;
     }
 
     public void cancel() {
         this.trangThai = TrangThaiDangKy.CANCELLED;
+    }
+
+    public void completePayment() {
+        this.trangThaiThanhToan = TrangThaiThanhToan.PAID;
+        this.trangThai = TrangThaiDangKy.ACTIVE;
+    }
+
+    public void extendMonths(int additionalMonths, BigDecimal pricePerMonth) {
+        if (!canEdit() && !isExpired()) {
+            throw new IllegalStateException("Không thể gia hạn khi đăng ký đã hoàn tất thanh toán và chưa hết hạn");
+        }
+
+        this.soThang += additionalMonths;
+        this.thoiGianHetHan = this.thoiGianHetHan.plusMonths(additionalMonths);
+        this.soTienThanhToan = this.soTienThanhToan.add(pricePerMonth.multiply(BigDecimal.valueOf(additionalMonths)));
+
+        if (isExpired()) {
+            this.trangThai = TrangThaiDangKy.ACTIVE;
+        }
+    }
+
+    public void updateMonths(int newMonthCount, BigDecimal pricePerMonth) {
+        if (!canEdit()) {
+            throw new IllegalStateException("Không thể cập nhật số tháng khi đã hoàn tất thanh toán");
+        }
+
+        this.soThang = newMonthCount;
+        this.thoiGianHetHan = this.thoiGianBatDau.plusMonths(newMonthCount);
+        this.soTienThanhToan = pricePerMonth.multiply(BigDecimal.valueOf(newMonthCount));
     }
 
     // Getters and Setters
@@ -270,6 +339,39 @@ public class DangKyThang {
 
     public void setSoTienThanhToan(BigDecimal soTienThanhToan) {
         this.soTienThanhToan = soTienThanhToan;
+    }
+
+    public TrangThaiThanhToan getTrangThaiThanhToan() {
+        return trangThaiThanhToan;
+    }
+
+    public void setTrangThaiThanhToan(TrangThaiThanhToan trangThaiThanhToan) {
+        this.trangThaiThanhToan = trangThaiThanhToan;
+    }
+
+    public Long getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
+
+    public Integer getLanGiaHan() {
+        return lanGiaHan;
+    }
+
+    public void setLanGiaHan(Integer lanGiaHan) {
+        this.lanGiaHan = lanGiaHan;
+    }
+
+    // Business methods để quản lý gia hạn
+    public boolean isRoot() {
+        return parentId == null;
+    }
+
+    public boolean isExtension() {
+        return parentId != null;
     }
 
     @Override

@@ -49,6 +49,9 @@ public class DangKyThangCreateDTO {
     @NotBlank(message = "Mã loại xe không được để trống")
     private String maLoaiXe;
 
+    // Ngày bắt đầu tùy chọn (nếu null thì dùng ngày hiện tại)
+    private String ngayBatDau; // Format: yyyy-MM-dd hoặc yyyy-MM-ddTHH:mm:ss
+
     private String ghiChu;
 
     // Default constructor
@@ -142,6 +145,14 @@ public class DangKyThangCreateDTO {
 
     public void setMaLoaiXe(String maLoaiXe) {
         this.maLoaiXe = maLoaiXe;
+    }
+
+    public String getNgayBatDau() {
+        return ngayBatDau;
+    }
+
+    public void setNgayBatDau(String ngayBatDau) {
+        this.ngayBatDau = ngayBatDau;
     }
 
     public String getGhiChu() {

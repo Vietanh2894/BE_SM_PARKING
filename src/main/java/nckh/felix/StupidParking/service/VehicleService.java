@@ -53,4 +53,8 @@ public class VehicleService {
     public void handleDeleteVehicle(String bienSoXe) {
         this.vehicleRepository.deleteById(bienSoXe);
     }
+
+    public List<Vehicle> getVehiclesByOwnerId(long ownerId) {
+        return this.vehicleRepository.findByOwnerId(Long.valueOf(ownerId));
+    }
 }

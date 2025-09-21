@@ -1,7 +1,10 @@
 package nckh.felix.StupidParking.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 
@@ -506,6 +509,368 @@ public class DangKyThangService {
             dangKy.setTrangThai(DangKyThang.TrangThaiDangKy.EXPIRED);
             dangKy.setUpdatedDate(LocalDateTime.now());
             dangKyThangRepository.save(dangKy);
+        }
+    }
+
+    /**
+     * Gia hạn cho đăng ký EXPIRED - Tạo record mới
+     */
+    @Transactional
+    public DangKyThang handleExtendExpiredDangKy(Long id, Integer newMonths, String maNhanVien)
+            throws IdInvalidException {
+        // 1. Validation cơ bản
+        if (id == null || id <= 0) {
+            throw new IdInvalidException("ID đăng ký tháng không hợp lệ");
+        }
+
+        if (newMonths == null || newMonths < 1 || newMonths > 12) {
+            throw new IdInvalidException("Số tháng gia hạn phải từ 1 đến 12");
+        }
+
+        if (maNhanVien == null || maNhanVien.trim().isEmpty()) {
+            throw new IdInvalidException("Mã nhân viên không được để trống");
+        }
+
+        DangKyThang expiredDangKy = fetchDangKyThangById(id);
+        if (expiredDangKy == null) {
+            throw new IdInvalidException("Không tìm thấy đăng ký tháng với ID: " + id);
+        }
+
+        if (!expiredDangKy.isExpired()) {
+            throw new IdInvalidException("Chỉ có thể gia hạn đăng ký đã hết hạn");
+        }
+
+        // 2. Kiểm tra nhân viên có quyền không
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null || (!staff.isAdmin() && !staff.isBaoVe())) {
+            throw new IdInvalidException("Nhân viên không có quyền gia hạn đăng ký tháng");
+        }
+
+        // 3. Kiểm tra xe không có đăng ký active nào khác
+        if (hasActiveDangKyThang(expiredDangKy.getBienSoXe())) {
+            throw new IdInvalidException("Xe đã có đăng ký tháng còn hiệu lực khác");
+        }
+
+        // 4. Tạo record mới từ dữ liệu cũ
+        DangKyThang newDangKy = new DangKyThang();
+
+        // Copy thông tin từ đăng ký cũ
+        newDangKy.setBienSoXe(expiredDangKy.getBienSoXe());
+        newDangKy.setVehicle(expiredDangKy.getVehicle());
+        newDangKy.setCccd(expiredDangKy.getCccd());
+        newDangKy.setSoCavet(expiredDangKy.getSoCavet());
+        newDangKy.setDiaChi(expiredDangKy.getDiaChi());
+        newDangKy.setLoaiXe(expiredDangKy.getLoaiXe());
+
+        // Thông tin mới
+        newDangKy.setNhanVienTao(staff);
+        newDangKy.setSoThang(newMonths);
+        newDangKy.setGhiChu("Gia hạn từ đăng ký ID: " + expiredDangKy.getId());
+
+        // Thiết lập quan hệ parent-child - luôn trỏ về root
+        Long rootId = expiredDangKy.isRoot() ? expiredDangKy.getId() : expiredDangKy.getParentId();
+        newDangKy.setParentId(rootId);
+        newDangKy.setLanGiaHan(expiredDangKy.getLanGiaHan() + 1);
+
+        // Thời gian: bắt đầu từ LocalDate.now()
+        LocalDateTime thoiGianBatDau = LocalDate.now().atStartOfDay();
+        LocalDateTime thoiGianHetHan = thoiGianBatDau.plusMonths(newMonths);
+
+        newDangKy.setThoiGianBatDau(thoiGianBatDau);
+        newDangKy.setThoiGianHetHan(thoiGianHetHan);
+
+        // Tính tiền
+        BigDecimal soTienThanhToan = priceService.calculateMonthlyPrice(
+                expiredDangKy.getLoaiXe().getMaLoaiXe(),
+                newMonths);
+        newDangKy.setSoTienThanhToan(soTienThanhToan);
+
+        return dangKyThangRepository.save(newDangKy);
+    }
+
+    /**
+     * Gia hạn cho đăng ký ACTIVE - Tạo record mới
+     */
+    @Transactional
+    public DangKyThang handleExtendActiveDangKy(Long id, Integer newMonths, String maNhanVien)
+            throws IdInvalidException {
+        // 1. Validation cơ bản
+        if (id == null || id <= 0) {
+            throw new IdInvalidException("ID đăng ký tháng không hợp lệ");
+        }
+
+        if (newMonths == null || newMonths < 1 || newMonths > 12) {
+            throw new IdInvalidException("Số tháng gia hạn phải từ 1 đến 12");
+        }
+
+        if (maNhanVien == null || maNhanVien.trim().isEmpty()) {
+            throw new IdInvalidException("Mã nhân viên không được để trống");
+        }
+
+        DangKyThang activeDangKy = fetchDangKyThangById(id);
+        if (activeDangKy == null) {
+            throw new IdInvalidException("Không tìm thấy đăng ký tháng với ID: " + id);
+        }
+
+        if (!activeDangKy.isActive()) {
+            throw new IdInvalidException("Chỉ có thể gia hạn đăng ký đang ACTIVE");
+        }
+
+        // 2. Kiểm tra nhân viên có quyền không
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null || (!staff.isAdmin() && !staff.isBaoVe())) {
+            throw new IdInvalidException("Nhân viên không có quyền gia hạn đăng ký tháng");
+        }
+
+        // 3. Tạo record mới từ dữ liệu cũ
+        DangKyThang newDangKy = new DangKyThang();
+
+        // Copy thông tin từ đăng ký cũ
+        newDangKy.setBienSoXe(activeDangKy.getBienSoXe());
+        newDangKy.setVehicle(activeDangKy.getVehicle());
+        newDangKy.setCccd(activeDangKy.getCccd());
+        newDangKy.setSoCavet(activeDangKy.getSoCavet());
+        newDangKy.setDiaChi(activeDangKy.getDiaChi());
+        newDangKy.setLoaiXe(activeDangKy.getLoaiXe());
+
+        // Thông tin mới
+        newDangKy.setNhanVienTao(staff);
+        newDangKy.setSoThang(newMonths);
+        newDangKy.setGhiChu("Gia hạn từ đăng ký ID: " + activeDangKy.getId());
+
+        // Thiết lập quan hệ parent-child - luôn trỏ về root
+        Long rootId = activeDangKy.isRoot() ? activeDangKy.getId() : activeDangKy.getParentId();
+        newDangKy.setParentId(rootId);
+        newDangKy.setLanGiaHan(activeDangKy.getLanGiaHan() + 1);
+
+        // Thời gian: bắt đầu từ ngayKetThuc của đăng ký ACTIVE
+        LocalDateTime thoiGianBatDau = activeDangKy.getThoiGianHetHan();
+        LocalDateTime thoiGianHetHan = thoiGianBatDau.plusMonths(newMonths);
+
+        newDangKy.setThoiGianBatDau(thoiGianBatDau);
+        newDangKy.setThoiGianHetHan(thoiGianHetHan);
+
+        // Tính tiền
+        BigDecimal soTienThanhToan = priceService.calculateMonthlyPrice(
+                activeDangKy.getLoaiXe().getMaLoaiXe(),
+                newMonths);
+        newDangKy.setSoTienThanhToan(soTienThanhToan);
+
+        return dangKyThangRepository.save(newDangKy);
+    }
+
+    /**
+     * Lấy toàn bộ chuỗi gia hạn của một đăng ký (root và tất cả extensions)
+     */
+    public List<DangKyThang> getExtensionChain(Long dangKyId) throws IdInvalidException {
+        DangKyThang dangKy = fetchDangKyThangById(dangKyId);
+        if (dangKy == null) {
+            throw new IdInvalidException("Không tìm thấy đăng ký tháng với ID: " + dangKyId);
+        }
+
+        // Tìm root record
+        DangKyThang root = dangKy;
+        while (!root.isRoot()) {
+            root = fetchDangKyThangById(root.getParentId());
+            if (root == null) {
+                throw new IdInvalidException("Không tìm thấy root record cho đăng ký ID: " + dangKyId);
+            }
+        }
+
+        // Lấy tất cả extensions của root này
+        return dangKyThangRepository.findExtensionChain(root.getId());
+    }
+
+    /**
+     * Lấy lịch sử gia hạn theo biển số xe
+     */
+    public List<DangKyThang> getExtensionHistoryByBienSoXe(String bienSoXe) {
+        if (bienSoXe == null || bienSoXe.trim().isEmpty()) {
+            throw new IllegalArgumentException("Biển số xe không được để trống");
+        }
+        return dangKyThangRepository.findByBienSoXeOrderByCreatedDateDesc(bienSoXe);
+    }
+
+    /**
+     * Save đăng ký tháng (cho việc fix data)
+     */
+    @Transactional
+    public DangKyThang saveDangKyThang(DangKyThang dangKyThang) {
+        return dangKyThangRepository.save(dangKyThang);
+    }
+
+    /**
+     * Hoàn tất thanh toán - chuyển từ PENDING sang PAID
+     */
+    @Transactional
+    public DangKyThang handleCompletePayment(Long id) throws IdInvalidException {
+        DangKyThang dangKy = fetchDangKyThangById(id);
+        if (dangKy == null) {
+            throw new IdInvalidException("Không tìm thấy đăng ký tháng với ID: " + id);
+        }
+
+        if (dangKy.getTrangThaiThanhToan() == DangKyThang.TrangThaiThanhToan.PAID) {
+            throw new IdInvalidException("Đăng ký tháng đã được thanh toán");
+        }
+
+        dangKy.completePayment();
+        return dangKyThangRepository.save(dangKy);
+    }
+
+    /**
+     * Lấy danh sách xe của User theo email hoặc số điện thoại
+     */
+    public List<Vehicle> getVehiclesByUser(String identifier, String identifierType) throws IdInvalidException {
+        User user = null;
+        if ("email".equals(identifierType)) {
+            user = userService.fetchUserByEmail(identifier);
+        } else if ("sdt".equals(identifierType)) {
+            user = userService.fetchUserBySdt(identifier);
+        } else {
+            throw new IdInvalidException("identifierType phải là 'email' hoặc 'sdt'");
+        }
+
+        if (user == null) {
+            throw new IdInvalidException("Không tìm thấy User với " + identifierType + ": " + identifier);
+        }
+
+        return vehicleService.getVehiclesByOwnerId(user.getId());
+    }
+
+    /**
+     * Tạo đăng ký tháng cho User đã tồn tại (Loại B)
+     */
+    @Transactional
+    public DangKyThang handleCreateDangKyThangForExistingUser(String identifier, String identifierType,
+            DangKyThangCreateDTO createDTO) throws IdInvalidException {
+        // Tìm User theo email hoặc SDT
+        User existingUser = null;
+        if ("email".equals(identifierType)) {
+            existingUser = userService.fetchUserByEmail(identifier);
+        } else if ("sdt".equals(identifierType)) {
+            existingUser = userService.fetchUserBySdt(identifier);
+        } else {
+            throw new IdInvalidException("identifierType phải là 'email' hoặc 'sdt'");
+        }
+
+        if (existingUser == null) {
+            throw new IdInvalidException("Không tìm thấy User với " + identifierType + ": " + identifier);
+        }
+
+        // Kiểm tra xe đã tồn tại chưa
+        Vehicle vehicle = vehicleService.fetchVehicleByBienSoXe(createDTO.getBienSoXe());
+        if (vehicle == null) {
+            // Tạo xe mới với thông tin từ DTO
+            vehicle = new Vehicle();
+            vehicle.setBienSoXe(createDTO.getBienSoXe());
+            vehicle.setTenXe(createDTO.getTenXe());
+            vehicle.setSoCavet(createDTO.getSoCavet());
+            vehicle.setOwner(existingUser);
+
+            VehicleType vehicleType = vehicleTypeService.fetchVehicleTypeByMaLoaiXe(createDTO.getMaLoaiXe());
+            if (vehicleType == null) {
+                throw new IdInvalidException("Loại xe không tồn tại với ID: " + createDTO.getMaLoaiXe());
+            }
+            vehicle.setMaLoaiXe(vehicleType);
+            vehicle = vehicleService.handleCreateVehicle(vehicle);
+        }
+
+        // Kiểm tra xe đã có đăng ký active chưa
+        if (hasActiveDangKyThang(createDTO.getBienSoXe())) {
+            throw new IdInvalidException("Xe đã có đăng ký tháng còn hiệu lực");
+        }
+
+        // Tạo đăng ký tháng mới
+        return createDangKyThangFromDTO(createDTO, existingUser, vehicle);
+    }
+
+    /**
+     * Cập nhật số tháng cho đăng ký PENDING
+     */
+    @Transactional
+    public DangKyThang handleUpdateMonthsForPending(Long id, Integer newMonthCount) throws IdInvalidException {
+        DangKyThang dangKy = fetchDangKyThangById(id);
+        if (dangKy == null) {
+            throw new IdInvalidException("Không tìm thấy đăng ký tháng với ID: " + id);
+        }
+
+        if (!dangKy.canEdit()) {
+            throw new IdInvalidException("Không thể cập nhật số tháng khi đã hoàn tất thanh toán");
+        }
+
+        if (newMonthCount < 1 || newMonthCount > 12) {
+            throw new IdInvalidException("Số tháng phải từ 1 đến 12");
+        }
+
+        // Lấy giá theo loại xe
+        BigDecimal pricePerMonth = priceService.calculateMonthlyPrice(dangKy.getLoaiXe().getMaLoaiXe(), 1);
+
+        dangKy.updateMonths(newMonthCount, pricePerMonth);
+        return dangKyThangRepository.save(dangKy);
+    }
+
+    /**
+     * Phương thức helper để tạo DangKyThang từ DTO
+     */
+    private DangKyThang createDangKyThangFromDTO(DangKyThangCreateDTO createDTO, User user, Vehicle vehicle)
+            throws IdInvalidException {
+        DangKyThang dangKy = new DangKyThang();
+
+        // Set thông tin snapshot
+        dangKy.setBienSoXe(vehicle.getBienSoXe());
+        dangKy.setCccd(user.getCccd());
+        dangKy.setDiaChi(user.getDiaChi());
+        dangKy.setSoCavet(vehicle.getSoCavet());
+
+        // Set thời gian
+        LocalDateTime thoiGianBatDau = parseStartDate(createDTO.getNgayBatDau());
+        dangKy.setThoiGianBatDau(thoiGianBatDau);
+        dangKy.setThoiGianHetHan(thoiGianBatDau.plusMonths(createDTO.getSoThang()));
+        dangKy.setSoThang(createDTO.getSoThang());
+
+        // Set references
+        dangKy.setVehicle(vehicle);
+        dangKy.setLoaiXe(vehicle.getMaLoaiXe());
+
+        Staff staff = staffService.fetchStaffByMaNV(createDTO.getMaNhanVien());
+        if (staff == null) {
+            throw new IdInvalidException("Nhân viên không tồn tại với ID: " + createDTO.getMaNhanVien());
+        }
+        dangKy.setNhanVienTao(staff);
+
+        // Tính tiền
+        BigDecimal totalPrice = priceService.calculateMonthlyPrice(vehicle.getMaLoaiXe().getMaLoaiXe(),
+                createDTO.getSoThang());
+        dangKy.setSoTienThanhToan(totalPrice);
+
+        dangKy.setGhiChu(createDTO.getGhiChu());
+
+        return dangKyThangRepository.save(dangKy);
+    }
+
+    /**
+     * Parse ngày bắt đầu từ string hoặc sử dụng ngày hiện tại
+     */
+    private LocalDateTime parseStartDate(String ngayBatDauStr) throws IdInvalidException {
+        if (ngayBatDauStr == null || ngayBatDauStr.trim().isEmpty()) {
+            // Option 1: Sử dụng ngày hiện tại (mặc định)
+            return LocalDateTime.now();
+        }
+
+        try {
+            // Option 2: Parse ngày do người dùng nhập
+            // Hỗ trợ nhiều format
+            if (ngayBatDauStr.contains("T")) {
+                // Format: yyyy-MM-ddTHH:mm:ss
+                return LocalDateTime.parse(ngayBatDauStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            } else {
+                // Format: yyyy-MM-dd (set thời gian về đầu ngày)
+                LocalDate date = LocalDate.parse(ngayBatDauStr, DateTimeFormatter.ISO_LOCAL_DATE);
+                return date.atStartOfDay();
+            }
+        } catch (DateTimeParseException e) {
+            throw new IdInvalidException(
+                    "Định dạng ngày bắt đầu không hợp lệ. Vui lòng sử dụng format yyyy-MM-dd hoặc yyyy-MM-ddTHH:mm:ss");
         }
     }
 }
