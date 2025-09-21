@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -567,9 +568,8 @@ public class DangKyThangService {
         newDangKy.setSoThang(newMonths);
         newDangKy.setGhiChu("Gia hạn từ đăng ký ID: " + expiredDangKy.getId());
 
-        // Thiết lập quan hệ parent-child - luôn trỏ về root
-        Long rootId = expiredDangKy.isRoot() ? expiredDangKy.getId() : expiredDangKy.getParentId();
-        newDangKy.setParentId(rootId);
+        // Thiết lập quan hệ parent-child - trỏ về record đang được gia hạn
+        newDangKy.setParentId(expiredDangKy.getId());
         newDangKy.setLanGiaHan(expiredDangKy.getLanGiaHan() + 1);
 
         // Thời gian: bắt đầu từ LocalDate.now()
@@ -638,9 +638,8 @@ public class DangKyThangService {
         newDangKy.setSoThang(newMonths);
         newDangKy.setGhiChu("Gia hạn từ đăng ký ID: " + activeDangKy.getId());
 
-        // Thiết lập quan hệ parent-child - luôn trỏ về root
-        Long rootId = activeDangKy.isRoot() ? activeDangKy.getId() : activeDangKy.getParentId();
-        newDangKy.setParentId(rootId);
+        // Thiết lập quan hệ parent-child - trỏ về record đang được gia hạn
+        newDangKy.setParentId(activeDangKy.getId());
         newDangKy.setLanGiaHan(activeDangKy.getLanGiaHan() + 1);
 
         // Thời gian: bắt đầu từ ngayKetThuc của đăng ký ACTIVE
@@ -677,8 +676,30 @@ public class DangKyThangService {
             }
         }
 
-        // Lấy tất cả extensions của root này
-        return dangKyThangRepository.findExtensionChain(root.getId());
+        // Traverse toàn bộ chain từ root
+        List<DangKyThang> chain = new ArrayList<>();
+        DangKyThang current = root;
+
+        // Thêm root vào chain
+        chain.add(current);
+
+        // Tìm tất cả extensions theo linked-list structure
+        while (true) {
+            // Tìm extension có parentId = current.id
+            DangKyThang nextExtension = dangKyThangRepository.findByParentId(current.getId())
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+
+            if (nextExtension == null) {
+                break; // Không có extension nào nữa
+            }
+
+            chain.add(nextExtension);
+            current = nextExtension;
+        }
+
+        return chain;
     }
 
     /**

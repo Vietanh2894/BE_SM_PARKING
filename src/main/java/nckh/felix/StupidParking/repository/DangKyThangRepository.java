@@ -88,4 +88,8 @@ public interface DangKyThangRepository extends JpaRepository<DangKyThang, Long> 
         // Tìm đăng ký root (parentId is null) theo biển số xe
         @Query("SELECT d FROM DangKyThang d WHERE d.bienSoXe = :bienSoXe AND d.parentId IS NULL ORDER BY d.createdDate DESC")
         List<DangKyThang> findRootRegistrationsByBienSoXe(@Param("bienSoXe") String bienSoXe);
+
+        // Tìm đăng ký theo parentId
+        @Query("SELECT d FROM DangKyThang d WHERE d.parentId = :parentId ORDER BY d.createdDate ASC")
+        List<DangKyThang> findByParentId(@Param("parentId") Long parentId);
 }

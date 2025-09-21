@@ -402,41 +402,17 @@ public class DangKyThangController {
     }
 
     /**
-     * Fix dữ liệu cũ - cập nhật parentId về root ID cho các extension
-     * API này chỉ chạy 1 lần để fix data hiện tại
+     * API info về extension chain logic - đã được sửa đúng
      */
-    @PostMapping("/dang-ky-thang/fix-extension-parent-ids")
-    public ResponseEntity<?> fixExtensionParentIds() {
-        try {
-            // Tìm tất cả records và fix parentId
-            List<DangKyThang> allRecords = dangKyThangService.getAllDangKyThang();
-            int fixedCount = 0;
-
-            for (DangKyThang record : allRecords) {
-                if (record.isExtension()) {
-                    // Tìm root record
-                    DangKyThang current = record;
-                    while (!current.isRoot()) {
-                        DangKyThang parent = dangKyThangService.fetchDangKyThangById(current.getParentId());
-                        if (parent == null)
-                            break;
-                        current = parent;
-                    }
-
-                    // Nếu tìm thấy root và parentId hiện tại không đúng
-                    if (current.isRoot() && !current.getId().equals(record.getParentId())) {
-                        // Update parentId về root
-                        record.setParentId(current.getId());
-                        dangKyThangService.saveDangKyThang(record);
-                        fixedCount++;
-                    }
-                }
-            }
-
-            return ResponseEntity.ok("Đã fix " + fixedCount + " records extension parentId về root");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error: " + e.getMessage());
-        }
+    @GetMapping("/dang-ky-thang/extension-chain-info")
+    public ResponseEntity<?> getExtensionChainInfo() {
+        return ResponseEntity.ok(
+                "Extension chain logic đã được sửa đúng:\n" +
+                        "- Root record: parentId = null, lanGiaHan = 0\n" +
+                        "- Extension 1: parentId = root_id, lanGiaHan = 1\n" +
+                        "- Extension 2: parentId = extension1_id, lanGiaHan = 2\n" +
+                        "- Extension N: parentId = extensionN-1_id, lanGiaHan = N\n\n" +
+                        "Ví dụ:\n" +
+                        "ID32 → ID33 (parentId=32) → ID34 (parentId=33) → ID35 (parentId=34)");
     }
 }
