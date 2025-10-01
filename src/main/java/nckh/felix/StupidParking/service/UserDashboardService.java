@@ -16,6 +16,7 @@ import nckh.felix.StupidParking.domain.dto.UserDashboardDTO;
 import nckh.felix.StupidParking.repository.DangKyThangRepository;
 import nckh.felix.StupidParking.repository.StaffRepository;
 import nckh.felix.StupidParking.repository.VehicleRepository;
+import nckh.felix.StupidParking.repository.VehicleTypeRepository;
 
 @Service
 public class UserDashboardService {
@@ -26,16 +27,18 @@ public class UserDashboardService {
     private final DangKyThangService dangKyThangService;
     private final PriceService priceService;
     private final StaffRepository staffRepository;
+    private final VehicleTypeRepository vehicleTypeRepository;
 
     public UserDashboardService(UserService userService, VehicleRepository vehicleRepository,
             DangKyThangRepository dangKyThangRepository, DangKyThangService dangKyThangService,
-            PriceService priceService, StaffRepository staffRepository) {
+            PriceService priceService, StaffRepository staffRepository, VehicleTypeRepository vehicleTypeRepository) {
         this.userService = userService;
         this.vehicleRepository = vehicleRepository;
         this.dangKyThangRepository = dangKyThangRepository;
         this.dangKyThangService = dangKyThangService;
         this.priceService = priceService;
         this.staffRepository = staffRepository;
+        this.vehicleTypeRepository = vehicleTypeRepository;
     }
 
     /**
@@ -181,7 +184,8 @@ public class UserDashboardService {
         for (Vehicle vehicle : vehicles) {
             DangKyThang activeDangKy = dangKyThangService.getActiveDangKyThang(vehicle.getBienSoXe());
             boolean hasActiveDangKy = activeDangKy != null;
-            LocalDateTime dangKyExpiry = hasActiveDangKy ? activeDangKy.getThoiGianHetHan() : null;
+            LocalDateTime dangKyExpiry = (hasActiveDangKy && activeDangKy != null) ? activeDangKy.getThoiGianHetHan()
+                    : null;
 
             UserDashboardDTO.VehicleInfo vehicleInfo = new UserDashboardDTO.VehicleInfo(
                     vehicle.getBienSoXe(),
@@ -312,5 +316,123 @@ public class UserDashboardService {
         extensionRequest.setNhanVienTao(allStaff.get(0));
 
         return dangKyThangRepository.save(extensionRequest);
+    }
+
+    /**
+     * Tạo xe mới cho User
+     */
+    public String createUserVehicle(String email, nckh.felix.StupidParking.domain.dto.UserVehicleCreateDTO request) {
+        // 1. Lấy thông tin User
+        User user = userService.fetchUserByEmail(email);
+        if (user == null) {
+            throw new IllegalArgumentException("User với email " + email + " không tồn tại");
+        }
+
+        // 2. Kiểm tra xe đã tồn tại chưa
+        Vehicle existingVehicle = vehicleRepository.findById(request.getBienSoXe()).orElse(null);
+        if (existingVehicle != null) {
+            throw new IllegalArgumentException(
+                    "Xe với biển số " + request.getBienSoXe() + " đã tồn tại trong hệ thống");
+        }
+
+        // 3. Tìm loại xe
+        nckh.felix.StupidParking.domain.VehicleType vehicleType = vehicleTypeRepository.findById(request.getMaLoaiXe())
+                .orElse(null);
+        if (vehicleType == null) {
+            throw new IllegalArgumentException("Loại xe " + request.getMaLoaiXe() + " không tồn tại");
+        }
+
+        // 4. Tạo xe mới
+        Vehicle newVehicle = new Vehicle();
+        newVehicle.setBienSoXe(request.getBienSoXe());
+        newVehicle.setTenXe(request.getTenXe());
+        newVehicle.setSoCavet(request.getSoCavet());
+        newVehicle.setMaLoaiXe(vehicleType);
+        newVehicle.setOwner(user);
+
+        // 5. Lưu xe
+        vehicleRepository.save(newVehicle);
+
+        return "Tạo xe mới thành công: " + request.getBienSoXe();
+    }
+
+    /**
+     * Gửi yêu cầu đăng ký tháng mới cho User
+     */
+    public String requestMonthlyRegistration(String email,
+            nckh.felix.StupidParking.domain.dto.UserMonthlyRegistrationRequestDTO request) {
+        // 1. Lấy thông tin User
+        User user = userService.fetchUserByEmail(email);
+        if (user == null) {
+            throw new IllegalArgumentException("User với email " + email + " không tồn tại");
+        }
+
+        // 2. Kiểm tra xe có thuộc về User không
+        Vehicle vehicle = vehicleRepository.findById(request.getBienSoXe()).orElse(null);
+        if (vehicle == null) {
+            throw new IllegalArgumentException("Xe với biển số " + request.getBienSoXe() + " không tồn tại");
+        }
+
+        if (vehicle.getOwner() == null
+                || !Long.valueOf(vehicle.getOwner().getId()).equals(Long.valueOf(user.getId()))) {
+            throw new IllegalArgumentException(
+                    "Xe với biển số " + request.getBienSoXe() + " không thuộc về tài khoản của bạn");
+        }
+
+        // 3. Kiểm tra xe đã có đăng ký active chưa
+        DangKyThang activeDangKy = dangKyThangService.getActiveDangKyThang(request.getBienSoXe());
+        if (activeDangKy != null) {
+            throw new IllegalArgumentException(
+                    "Xe " + request.getBienSoXe() + " đã có đăng ký tháng còn hiệu lực đến " +
+                            activeDangKy.getThoiGianHetHan().toLocalDate());
+        }
+
+        // 4. Tạo yêu cầu đăng ký tháng mới (trạng thái PENDING)
+        DangKyThang newRequest = new DangKyThang();
+        newRequest.setBienSoXe(request.getBienSoXe());
+        newRequest.setCccd(user.getCccd());
+        newRequest.setDiaChi(user.getDiaChi());
+        newRequest.setSoThang(request.getSoThang());
+        newRequest.setVehicle(vehicle);
+
+        // Set các field bắt buộc từ Vehicle
+        newRequest.setSoCavet(vehicle.getSoCavet() != null ? vehicle.getSoCavet() : "");
+        newRequest.setLoaiXe(vehicle.getMaLoaiXe());
+
+        newRequest.setTrangThai(DangKyThang.TrangThaiDangKy.PENDING);
+        newRequest.setTrangThaiThanhToan(DangKyThang.TrangThaiThanhToan.PENDING);
+        newRequest.setLanGiaHan(0);
+        newRequest.setGhiChu("YÊU CẦU ĐĂNG KÝ TỪ USER: " + (request.getGhiChu() != null ? request.getGhiChu() : ""));
+
+        // Tính toán thời gian và tiền
+        LocalDateTime startDate = LocalDateTime.now();
+        if (request.getNgayBatDauMongMuon() != null && !request.getNgayBatDauMongMuon().isEmpty()) {
+            try {
+                startDate = LocalDateTime.parse(request.getNgayBatDauMongMuon() + "T00:00:00");
+            } catch (Exception e) {
+                // Nếu parse lỗi thì dùng ngày hiện tại
+            }
+        }
+
+        newRequest.setThoiGianBatDau(startDate);
+        newRequest.setThoiGianHetHan(startDate.plusMonths(request.getSoThang()));
+
+        // Tính tiền
+        BigDecimal soTienThanhToan = priceService.calculateMonthlyPrice(vehicle.getMaLoaiXe().getMaLoaiXe(),
+                request.getSoThang());
+        newRequest.setSoTienThanhToan(soTienThanhToan);
+
+        // Tạm thời sử dụng Staff đầu tiên cho yêu cầu
+        List<Staff> allStaff = staffRepository.findAll();
+        if (allStaff.isEmpty()) {
+            throw new RuntimeException("Không tìm thấy Staff nào trong hệ thống");
+        }
+        newRequest.setNhanVienTao(allStaff.get(0));
+
+        // 5. Lưu yêu cầu
+        DangKyThang savedRequest = dangKyThangRepository.save(newRequest);
+
+        return "Yêu cầu đăng ký tháng đã được gửi thành công. ID yêu cầu: " + savedRequest.getId() +
+                " - Số tiền: " + soTienThanhToan + " VND - Đang chờ Staff xử lý";
     }
 }

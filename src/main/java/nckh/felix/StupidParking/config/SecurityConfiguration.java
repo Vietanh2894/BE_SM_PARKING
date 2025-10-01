@@ -48,8 +48,8 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(
                         authz -> authz
                                 .requestMatchers("/", "/login", "/user/login").permitAll()
-                                // Cho phép User truy cập các endpoint dashboard với JWT token
-                                .requestMatchers("/user/dashboard", "/user/vehicles", "/user/dang-ky-thang", "/user/request-extension")
+                                // Cho phép User truy cập các endpoint dashboard và quản lý xe với JWT token
+                                .requestMatchers("/user/**")
                                 .hasRole("USER")
                                 // CHỈ CHO PHÉP STAFF (ADMIN hoặc BAO_VE) TRUY CẬP TẤT CẢ ENDPOINT KHÁC
                                 .anyRequest().hasAnyRole("ADMIN", "BAO_VE"))

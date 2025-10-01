@@ -12,6 +12,8 @@ import nckh.felix.StupidParking.domain.User;
 import nckh.felix.StupidParking.domain.RestResponse;
 import nckh.felix.StupidParking.domain.dto.UserDashboardDTO;
 import nckh.felix.StupidParking.domain.dto.UserExtensionRequestDTO;
+import nckh.felix.StupidParking.domain.dto.UserVehicleCreateDTO;
+import nckh.felix.StupidParking.domain.dto.UserMonthlyRegistrationRequestDTO;
 import nckh.felix.StupidParking.service.UserService;
 import nckh.felix.StupidParking.service.UserDashboardService;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
@@ -228,6 +230,99 @@ public class UserController {
             successResponse.setMessage("Yêu cầu gia hạn đã được gửi thành công");
             successResponse.setError(null);
             successResponse.setData("Yêu cầu gia hạn ID: " + extensionRequest.getId() + " đang chờ xử lý");
+
+            return ResponseEntity.ok(successResponse);
+
+        } catch (IllegalArgumentException e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(400);
+            errorResponse.setMessage(e.getMessage());
+            errorResponse.setError("INVALID_REQUEST");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+
+        } catch (Exception e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(500);
+            errorResponse.setMessage("Lỗi server: " + e.getMessage());
+            errorResponse.setError("INTERNAL_SERVER_ERROR");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * API tạo xe mới cho User (cần JWT token)
+     */
+    @PostMapping("/user/vehicles")
+    public ResponseEntity<RestResponse<String>> createUserVehicle(@RequestBody UserVehicleCreateDTO request) {
+        try {
+            // Kiểm tra Authentication
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                RestResponse<String> errorResponse = new RestResponse<>();
+                errorResponse.setStatusCode(401);
+                errorResponse.setMessage("Vui lòng đăng nhập để tạo xe mới");
+                errorResponse.setError("UNAUTHORIZED");
+                errorResponse.setData(null);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+            }
+
+            String email = authentication.getName();
+            String result = userDashboardService.createUserVehicle(email, request);
+
+            RestResponse<String> successResponse = new RestResponse<>();
+            successResponse.setStatusCode(201);
+            successResponse.setMessage("Tạo xe mới thành công");
+            successResponse.setError(null);
+            successResponse.setData(result);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(successResponse);
+
+        } catch (IllegalArgumentException e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(400);
+            errorResponse.setMessage(e.getMessage());
+            errorResponse.setError("INVALID_REQUEST");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+
+        } catch (Exception e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(500);
+            errorResponse.setMessage("Lỗi server: " + e.getMessage());
+            errorResponse.setError("INTERNAL_SERVER_ERROR");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * API gửi yêu cầu đăng ký tháng mới cho User (cần JWT token)
+     */
+    @PostMapping("/user/monthly-registration-request")
+    public ResponseEntity<RestResponse<String>> requestMonthlyRegistration(
+            @RequestBody UserMonthlyRegistrationRequestDTO request) {
+        try {
+            // Kiểm tra Authentication
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                RestResponse<String> errorResponse = new RestResponse<>();
+                errorResponse.setStatusCode(401);
+                errorResponse.setMessage("Vui lòng đăng nhập để gửi yêu cầu đăng ký");
+                errorResponse.setError("UNAUTHORIZED");
+                errorResponse.setData(null);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+            }
+
+            String email = authentication.getName();
+            String result = userDashboardService.requestMonthlyRegistration(email, request);
+
+            RestResponse<String> successResponse = new RestResponse<>();
+            successResponse.setStatusCode(200);
+            successResponse.setMessage("Yêu cầu đăng ký tháng đã được gửi thành công");
+            successResponse.setError(null);
+            successResponse.setData(result);
 
             return ResponseEntity.ok(successResponse);
 
