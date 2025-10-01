@@ -7,9 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "vehicle_types")
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class VehicleType {
     @Id
     @Column(name = "ma_loai_xe", length = 10, nullable = false)

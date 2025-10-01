@@ -1,25 +1,19 @@
 package nckh.felix.StupidParking.controller;
 
 import java.util.List;
-import java.util.Collections;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.http.HttpStatus;
-import jakarta.validation.Valid;
+import nckh.felix.StupidParking.domain.DangKyThang;
 import nckh.felix.StupidParking.domain.User;
 import nckh.felix.StupidParking.domain.RestResponse;
-import nckh.felix.StupidParking.domain.dto.ResUserLoginDTO;
-import nckh.felix.StupidParking.domain.dto.UserLoginDTO;
 import nckh.felix.StupidParking.domain.dto.UserDashboardDTO;
+import nckh.felix.StupidParking.domain.dto.UserExtensionRequestDTO;
 import nckh.felix.StupidParking.service.UserService;
-import nckh.felix.StupidParking.service.UserAuthService;
 import nckh.felix.StupidParking.service.UserDashboardService;
-import nckh.felix.StupidParking.util.SecurityUtil;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
 
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,17 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
-    private final UserAuthService userAuthService;
-    private final SecurityUtil securityUtil;
     private final UserDashboardService userDashboardService;
 
     public UserController(UserService userService, PasswordEncoder passwordEncoder,
-            UserAuthService userAuthService, SecurityUtil securityUtil,
             UserDashboardService userDashboardService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
-        this.userAuthService = userAuthService;
-        this.securityUtil = securityUtil;
         this.userDashboardService = userDashboardService;
     }
 
@@ -88,60 +77,6 @@ public class UserController {
 
         this.userService.handleDeleteUser(id);
         return ResponseEntity.ok("Xóa thành công");
-    }
-
-    @PostMapping("/user/login")
-    public ResponseEntity<RestResponse<ResUserLoginDTO>> loginUser(@Valid @RequestBody UserLoginDTO userLoginDTO) {
-        try {
-            // Xác thực user
-            User authenticatedUser = userAuthService.authenticateUser(userLoginDTO);
-
-            if (authenticatedUser == null) {
-                RestResponse<ResUserLoginDTO> errorResponse = new RestResponse<>();
-                errorResponse.setStatusCode(401);
-                errorResponse.setMessage("Email hoặc password không đúng");
-                errorResponse.setError(null);
-                errorResponse.setData(null);
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
-            }
-
-            // Tạo Authentication object cho User với role USER
-            Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    authenticatedUser.getEmail(),
-                    null,
-                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
-
-            // Tạo JWT token
-            String accessToken = securityUtil.createToken(authentication);
-
-            // Set authentication vào SecurityContext
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-
-            // Tạo response
-            ResUserLoginDTO.UserInfo userInfo = new ResUserLoginDTO.UserInfo(
-                    authenticatedUser.getId(),
-                    authenticatedUser.getName(),
-                    authenticatedUser.getEmail(),
-                    "USER");
-
-            ResUserLoginDTO response = new ResUserLoginDTO(accessToken, "USER", userInfo);
-
-            RestResponse<ResUserLoginDTO> successResponse = new RestResponse<>();
-            successResponse.setStatusCode(200);
-            successResponse.setMessage("Đăng nhập thành công");
-            successResponse.setError(null);
-            successResponse.setData(response);
-
-            return ResponseEntity.ok(successResponse);
-
-        } catch (Exception e) {
-            RestResponse<ResUserLoginDTO> errorResponse = new RestResponse<>();
-            errorResponse.setStatusCode(500);
-            errorResponse.setMessage("Lỗi server: " + e.getMessage());
-            errorResponse.setError("INTERNAL_SERVER_ERROR");
-            errorResponse.setData(null);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
     }
 
     // ============== USER DASHBOARD APIs ==============
@@ -259,6 +194,53 @@ public class UserController {
 
         } catch (Exception e) {
             RestResponse<List<UserDashboardDTO.DangKyThangInfo>> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(500);
+            errorResponse.setMessage("Lỗi server: " + e.getMessage());
+            errorResponse.setError("INTERNAL_SERVER_ERROR");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * API yêu cầu gia hạn đăng ký tháng cho User (cần JWT token)
+     */
+    @PostMapping("/user/request-extension")
+    public ResponseEntity<RestResponse<String>> requestExtension(@RequestBody UserExtensionRequestDTO request) {
+        try {
+            // Kiểm tra Authentication
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                RestResponse<String> errorResponse = new RestResponse<>();
+                errorResponse.setStatusCode(401);
+                errorResponse.setMessage("Vui lòng đăng nhập để yêu cầu gia hạn");
+                errorResponse.setError("UNAUTHORIZED");
+                errorResponse.setData(null);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+            }
+
+            String email = authentication.getName();
+            DangKyThang extensionRequest = userDashboardService.requestExtension(email, request.getDangKyThangId(),
+                    request.getSoThangGiaHan(), request.getGhiChu());
+
+            RestResponse<String> successResponse = new RestResponse<>();
+            successResponse.setStatusCode(200);
+            successResponse.setMessage("Yêu cầu gia hạn đã được gửi thành công");
+            successResponse.setError(null);
+            successResponse.setData("Yêu cầu gia hạn ID: " + extensionRequest.getId() + " đang chờ xử lý");
+
+            return ResponseEntity.ok(successResponse);
+
+        } catch (IllegalArgumentException e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
+            errorResponse.setStatusCode(400);
+            errorResponse.setMessage(e.getMessage());
+            errorResponse.setError("INVALID_REQUEST");
+            errorResponse.setData(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+
+        } catch (Exception e) {
+            RestResponse<String> errorResponse = new RestResponse<>();
             errorResponse.setStatusCode(500);
             errorResponse.setMessage("Lỗi server: " + e.getMessage());
             errorResponse.setError("INTERNAL_SERVER_ERROR");

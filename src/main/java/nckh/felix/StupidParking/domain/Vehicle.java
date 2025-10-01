@@ -12,9 +12,11 @@ import jakarta.persistence.PrePersist;
 import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "Xe")
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class Vehicle {
     @Id
     @Column(name = "BienSoXe", length = 20, columnDefinition = "nchar(20)")

@@ -1,5 +1,6 @@
 package nckh.felix.StupidParking.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "dang_ky_thang")
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class DangKyThang {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,7 +25,7 @@ public class DangKyThang {
     @NotBlank(message = "Biển số xe không được để trống")
     private String bienSoXe;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bien_so_xe", referencedColumnName = "BienSoXe", insertable = false, updatable = false)
     private Vehicle vehicle;
 

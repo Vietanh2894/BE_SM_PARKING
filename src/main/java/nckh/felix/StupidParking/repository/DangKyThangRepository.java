@@ -14,8 +14,8 @@ import nckh.felix.StupidParking.domain.DangKyThang;
 @Repository
 public interface DangKyThangRepository extends JpaRepository<DangKyThang, Long> {
 
-        // Tìm đăng ký tháng còn hiệu lực của một xe
-        @Query("SELECT d FROM DangKyThang d WHERE d.bienSoXe = :bienSoXe AND d.trangThai = 'ACTIVE' AND d.thoiGianHetHan > :currentTime")
+        // Tìm đăng ký tháng còn hiệu lực của một xe (lấy mới nhất nếu có nhiều)
+        @Query(value = "SELECT * FROM dang_ky_thang WHERE bien_so_xe = :bienSoXe AND trang_thai = 'ACTIVE' AND thoi_gian_het_han > :currentTime ORDER BY thoi_gian_het_han DESC LIMIT 1", nativeQuery = true)
         Optional<DangKyThang> findActiveDangKyThangByBienSoXe(@Param("bienSoXe") String bienSoXe,
                         @Param("currentTime") LocalDateTime currentTime);
 
@@ -47,6 +47,9 @@ public interface DangKyThangRepository extends JpaRepository<DangKyThang, Long> 
 
         // Tìm đăng ký tháng theo trạng thái
         List<DangKyThang> findByTrangThaiOrderByCreatedDateDesc(DangKyThang.TrangThaiDangKy trangThai);
+
+        // Kiểm tra xem có yêu cầu gia hạn PENDING nào cho parentId này không
+        boolean existsByParentIdAndTrangThai(Long parentId, DangKyThang.TrangThaiDangKy trangThai);
 
         // ============== VALIDATION METHODS ==============
 

@@ -1,5 +1,6 @@
 package nckh.felix.StupidParking.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "staff")
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class Staff {
     @Id
     @Column(name = "ma_nv", length = 10, nullable = false)
