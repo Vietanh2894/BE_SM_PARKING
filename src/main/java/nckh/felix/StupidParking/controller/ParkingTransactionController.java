@@ -35,6 +35,49 @@ public class ParkingTransactionController {
     }
 
     /**
+     * CHO XE VÀO TRỰC TIẾP VỚI FACE RECOGNITION - DÀNH CHO MOBILE/CAMERA SCAN
+     * API kết hợp tạo yêu cầu và duyệt vào trong 1 bước + xác thực khuôn mặt
+     */
+    @PostMapping("/direct-entry-with-face")
+    public ResponseEntity<?> directVehicleEntryWithFace(@RequestBody Map<String, String> request) {
+        try {
+            String bienSoXe = request.get("bienSoXe");
+            String maBaiDo = request.get("maBaiDo");
+            String maLoaiXe = request.get("maLoaiXe");
+            String ghiChu = request.get("ghiChu");
+            String faceImageBase64 = request.get("faceImageBase64"); // Ảnh khuôn mặt dạng base64
+
+            // Lấy thông tin nhân viên từ token
+            String currentStaffUsername = getCurrentStaffUsername();
+            Staff staff = staffService.fetchStaffByUsername(currentStaffUsername);
+
+            if (staff == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên"));
+            }
+
+            ParkingTransaction transaction = parkingTransactionService.directVehicleEntryWithFace(
+                    bienSoXe, maBaiDo, maLoaiXe, staff.getMaNV(), ghiChu, faceImageBase64);
+
+            // Prepare response data with null checks
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("success", true);
+            responseData.put("message", "Xe đã được cho vào bãi đỗ với xác thực khuôn mặt thành công");
+            responseData.put("transaction", transaction);
+            responseData.put("faceVerificationStatus",
+                    transaction.getFaceVerificationStatus() != null ? transaction.getFaceVerificationStatus().toString()
+                            : "NOT_VERIFIED");
+            responseData.put("faceSimilarityEntry",
+                    transaction.getFaceSimilarityEntry() != null ? transaction.getFaceSimilarityEntry() : "N/A");
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(responseData);
+        } catch (IdInvalidException | IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()));
+        }
+    }
+
+    /**
      * CHO XE VÀO TRỰC TIẾP - DÀNH CHO MOBILE/CAMERA SCAN
      * API kết hợp tạo yêu cầu và duyệt vào trong 1 bước
      */
@@ -86,6 +129,54 @@ public class ParkingTransactionController {
                     "canEnter", status.canEnter(),
                     "message", status.getMessage()));
         } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()));
+        }
+    }
+
+    /**
+     * CHO XE RA TRỰC TIẾP VỚI FACE RECOGNITION - DÀNH CHO MOBILE/CAMERA SCAN
+     * API kết hợp tạo yêu cầu và duyệt ra trong 1 bước + xác thực khuôn mặt
+     */
+    @PostMapping("/direct-exit-with-face")
+    public ResponseEntity<?> directVehicleExitWithFace(@RequestBody Map<String, String> request) {
+        try {
+            String bienSoXe = request.get("bienSoXe");
+            String soTienStr = request.get("soTienThanhToan");
+            String faceImageBase64 = request.get("faceImageBase64"); // Ảnh khuôn mặt dạng base64
+
+            // Lấy thông tin nhân viên từ token
+            String currentStaffUsername = getCurrentStaffUsername();
+            Staff staff = staffService.fetchStaffByUsername(currentStaffUsername);
+
+            if (staff == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên"));
+            }
+
+            // Parse số tiền thanh toán (có thể null để tính tự động)
+            BigDecimal soTienThanhToan = soTienStr != null && !soTienStr.trim().isEmpty()
+                    ? new BigDecimal(soTienStr)
+                    : null;
+
+            ParkingTransaction transaction = parkingTransactionService.directVehicleExitWithFace(
+                    bienSoXe, staff.getMaNV(), soTienThanhToan, faceImageBase64);
+
+            // Prepare response data with null checks
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("success", true);
+            responseData.put("message", "Xe đã được cho ra bãi đỗ với xác thực khuôn mặt thành công");
+            responseData.put("transaction", transaction);
+            responseData.put("faceVerificationStatus",
+                    transaction.getFaceVerificationStatus() != null ? transaction.getFaceVerificationStatus().toString()
+                            : "NOT_VERIFIED");
+            responseData.put("faceSimilarityExit",
+                    transaction.getFaceSimilarityExit() != null ? transaction.getFaceSimilarityExit() : "N/A");
+            responseData.put("soTienThanhToan",
+                    transaction.getSoTienThanhToan() != null ? transaction.getSoTienThanhToan() : BigDecimal.ZERO);
+
+            return ResponseEntity.ok(responseData);
+        } catch (IdInvalidException | IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "error", e.getMessage()));

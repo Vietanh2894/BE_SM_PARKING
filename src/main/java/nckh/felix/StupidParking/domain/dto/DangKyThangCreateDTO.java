@@ -54,6 +54,11 @@ public class DangKyThangCreateDTO {
 
     private String ghiChu;
 
+    // Face Recognition Integration
+    private String faceImageBase64; // Ảnh khuôn mặt dạng base64 (optional)
+
+    private boolean enableFaceRecognition = false; // Có bật nhận diện khuôn mặt không
+
     // Default constructor
     public DangKyThangCreateDTO() {
     }
@@ -161,6 +166,22 @@ public class DangKyThangCreateDTO {
 
     public void setGhiChu(String ghiChu) {
         this.ghiChu = ghiChu;
+    }
+
+    public String getFaceImageBase64() {
+        return faceImageBase64;
+    }
+
+    public void setFaceImageBase64(String faceImageBase64) {
+        this.faceImageBase64 = faceImageBase64;
+    }
+
+    public boolean isEnableFaceRecognition() {
+        return enableFaceRecognition;
+    }
+
+    public void setEnableFaceRecognition(boolean enableFaceRecognition) {
+        this.enableFaceRecognition = enableFaceRecognition;
     }
 
     @Override

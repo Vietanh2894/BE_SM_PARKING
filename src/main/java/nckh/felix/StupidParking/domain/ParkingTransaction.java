@@ -64,6 +64,27 @@ public class ParkingTransaction {
     @Column(name = "updated_date")
     private LocalDateTime updatedDate;
 
+    // Face Recognition Integration
+    @Column(name = "face_id_entry", length = 100)
+    private String faceIdEntry; // ID khuôn mặt khi xe vào
+
+    @Column(name = "face_id_exit", length = 100)
+    private String faceIdExit; // ID khuôn mặt khi xe ra
+
+    @Column(name = "face_similarity_entry", precision = 5, scale = 3)
+    private BigDecimal faceSimilarityEntry; // Độ tương đồng khi xe vào
+
+    @Column(name = "face_similarity_exit", precision = 5, scale = 3)
+    private BigDecimal faceSimilarityExit; // Độ tương đồng khi xe ra
+
+    @Column(name = "face_verification_status", length = 20)
+    @Enumerated(EnumType.STRING)
+    private FaceVerificationStatus faceVerificationStatus = FaceVerificationStatus.NOT_VERIFIED;
+
+    // Temporary field to handle database schema mismatch
+    @Column(name = "face_verified", columnDefinition = "boolean default false")
+    private Boolean faceVerified = false;
+
     // Enum for transaction status
     public enum TrangThaiGiaoDich {
         PENDING_IN("Chờ duyệt vào"),
@@ -75,6 +96,27 @@ public class ParkingTransaction {
         private final String description;
 
         TrangThaiGiaoDich(String description) {
+            this.description = description;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+    }
+
+    // Enum for face verification status
+    public enum FaceVerificationStatus {
+        NOT_VERIFIED("Chưa xác thực"),
+        VERIFIED_ENTRY("Đã xác thực vào"),
+        VERIFIED_EXIT("Đã xác thực ra"),
+        VERIFIED_BOTH("Đã xác thực cả vào và ra"),
+        FAILED_ENTRY("Xác thực vào thất bại"),
+        FAILED_EXIT("Xác thực ra thất bại"),
+        BYPASSED("Bỏ qua xác thực");
+
+        private final String description;
+
+        FaceVerificationStatus(String description) {
             this.description = description;
         }
 
@@ -279,6 +321,56 @@ public class ParkingTransaction {
 
     public void setUpdatedDate(LocalDateTime updatedDate) {
         this.updatedDate = updatedDate;
+    }
+
+    // Face Recognition getters and setters
+    public String getFaceIdEntry() {
+        return faceIdEntry;
+    }
+
+    public void setFaceIdEntry(String faceIdEntry) {
+        this.faceIdEntry = faceIdEntry;
+    }
+
+    public String getFaceIdExit() {
+        return faceIdExit;
+    }
+
+    public void setFaceIdExit(String faceIdExit) {
+        this.faceIdExit = faceIdExit;
+    }
+
+    public BigDecimal getFaceSimilarityEntry() {
+        return faceSimilarityEntry;
+    }
+
+    public void setFaceSimilarityEntry(BigDecimal faceSimilarityEntry) {
+        this.faceSimilarityEntry = faceSimilarityEntry;
+    }
+
+    public BigDecimal getFaceSimilarityExit() {
+        return faceSimilarityExit;
+    }
+
+    public void setFaceSimilarityExit(BigDecimal faceSimilarityExit) {
+        this.faceSimilarityExit = faceSimilarityExit;
+    }
+
+    public FaceVerificationStatus getFaceVerificationStatus() {
+        return faceVerificationStatus;
+    }
+
+    public void setFaceVerificationStatus(FaceVerificationStatus faceVerificationStatus) {
+        this.faceVerificationStatus = faceVerificationStatus;
+    }
+
+    // Temporary getter/setter for face_verified field
+    public Boolean getFaceVerified() {
+        return faceVerified;
+    }
+
+    public void setFaceVerified(Boolean faceVerified) {
+        this.faceVerified = faceVerified;
     }
 
     @Override

@@ -15,6 +15,8 @@ import nckh.felix.StupidParking.domain.Staff;
 import nckh.felix.StupidParking.domain.Vehicle;
 import nckh.felix.StupidParking.domain.VehicleType;
 import nckh.felix.StupidParking.repository.ParkingTransactionRepository;
+import nckh.felix.StupidParking.service.FaceRecognitionIntegrationService.FaceRecognitionResult;
+import nckh.felix.StupidParking.service.FaceRecognitionIntegrationService.FaceVerificationResult;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
 
 @Service
@@ -28,6 +30,7 @@ public class ParkingTransactionService {
     private final VehicleService vehicleService;
     private final VehicleTypeService vehicleTypeService;
     private final DangKyThangService dangKyThangService;
+    private final FaceRecognitionIntegrationService faceRecognitionService;
 
     public ParkingTransactionService(ParkingTransactionRepository parkingTransactionRepository,
             ParkingLotService parkingLotService,
@@ -35,7 +38,8 @@ public class ParkingTransactionService {
             PriceService priceService,
             VehicleService vehicleService,
             VehicleTypeService vehicleTypeService,
-            DangKyThangService dangKyThangService) {
+            DangKyThangService dangKyThangService,
+            FaceRecognitionIntegrationService faceRecognitionService) {
         this.parkingTransactionRepository = parkingTransactionRepository;
         this.parkingLotService = parkingLotService;
         this.staffService = staffService;
@@ -43,6 +47,7 @@ public class ParkingTransactionService {
         this.vehicleService = vehicleService;
         this.vehicleTypeService = vehicleTypeService;
         this.dangKyThangService = dangKyThangService;
+        this.faceRecognitionService = faceRecognitionService;
     }
 
     /**
@@ -104,6 +109,158 @@ public class ParkingTransactionService {
         transaction.setGhiChu(ghiChu);
 
         return parkingTransactionRepository.save(transaction);
+    }
+
+    /**
+     * CHO XE VÀO TRỰC TIẾP VỚI FACE RECOGNITION - DÀNH CHO MOBILE/CAMERA SCAN
+     * Kết hợp tạo yêu cầu và duyệt vào trong 1 bước + xác thực khuôn mặt
+     */
+    public ParkingTransaction directVehicleEntryWithFace(String bienSoXe, String maBaiDo, String maLoaiXe,
+            String maNhanVien, String ghiChu, String faceImageBase64)
+            throws IdInvalidException {
+        // Kiểm tra xe có đang đỗ trong bãi không
+        if (parkingTransactionRepository.countVehicleCurrentlyParked(bienSoXe) > 0) {
+            throw new IllegalStateException("Xe " + bienSoXe + " đang đỗ trong bãi");
+        }
+
+        // Kiểm tra nhân viên
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null) {
+            throw new IllegalArgumentException("Không tìm thấy nhân viên: " + maNhanVien);
+        }
+
+        // Kiểm tra bãi đỗ
+        ParkingLot parkingLot = parkingLotService.fetchParkingLotByMaBaiDo(maBaiDo);
+        if (parkingLot == null) {
+            throw new IllegalArgumentException("Không tìm thấy bãi đỗ: " + maBaiDo);
+        }
+
+        // KIỂM TRA LOẠI XE CÓ PHÙ HỢP VỚI BÃI ĐỖ KHÔNG
+        if (!parkingLot.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+            throw new IllegalArgumentException("Loại xe " + maLoaiXe + " không phù hợp với bãi đỗ " + maBaiDo
+                    + " (chỉ dành cho " + parkingLot.getMaLoaiXe().getMaLoaiXe() + ")");
+        }
+
+        if (!parkingLot.canPark()) {
+            throw new IllegalStateException("Bãi đỗ không thể nhận thêm xe");
+        }
+
+        // Kiểm tra và tạo Vehicle mới nếu chưa tồn tại
+        Vehicle vehicle = vehicleService.fetchVehicleByBienSoXe(bienSoXe);
+        if (vehicle == null) {
+            VehicleType vehicleType = vehicleTypeService.fetchVehicleTypeByMaLoaiXe(maLoaiXe);
+            if (vehicleType == null) {
+                throw new IllegalArgumentException("Không tìm thấy loại xe: " + maLoaiXe);
+            }
+
+            vehicle = new Vehicle();
+            vehicle.setBienSoXe(bienSoXe);
+            vehicle.setMaLoaiXe(vehicleType);
+            vehicle.setTenXe("Xe " + maLoaiXe + " - " + bienSoXe);
+            vehicle = vehicleService.handleCreateVehicle(vehicle);
+        } else {
+            if (!vehicle.getMaLoaiXe().getMaLoaiXe().equals(maLoaiXe)) {
+                throw new IllegalArgumentException("Xe " + bienSoXe + " là loại " + vehicle.getMaLoaiXe().getMaLoaiXe()
+                        + ", không phải " + maLoaiXe);
+            }
+        }
+
+        // Kiểm tra đăng ký tháng
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(bienSoXe);
+        nckh.felix.StupidParking.domain.DangKyThang activeDangKy = null;
+
+        if (hasActiveMonthlyRegistration) {
+            activeDangKy = dangKyThangService.getActiveDangKyThang(bienSoXe);
+        }
+
+        // Tạo giao dịch
+        ParkingTransaction transaction = new ParkingTransaction();
+        transaction.setBienSoXe(bienSoXe);
+        transaction.setParkingLot(parkingLot);
+        transaction.setVehicleType(vehicle.getMaLoaiXe());
+        transaction.setThoiGianVao(LocalDateTime.now());
+        transaction.setGhiChu(ghiChu);
+
+        // XỬ LÝ FACE RECOGNITION
+        if (faceImageBase64 != null && !faceImageBase64.trim().isEmpty()) {
+            try {
+                if (hasActiveMonthlyRegistration && activeDangKy != null) {
+                    // XE CÓ ĐĂNG KÝ THÁNG - NHẬN DIỆN KHUÔN MẶT
+                    FaceRecognitionIntegrationService.FaceRecognitionResult faceResult = faceRecognitionService
+                            .recognizeFaceForEntry(faceImageBase64, 0.6);
+
+                    if (faceResult.isSuccess()) {
+                        // Lưu thông tin face khi xe vào
+                        transaction.setFaceIdEntry(faceResult.getFaceId());
+                        transaction.setFaceSimilarityEntry(faceResult.getSimilarity());
+
+                        // Xác thực với đăng ký tháng
+                        FaceRecognitionIntegrationService.FaceVerificationResult verifyResult = faceRecognitionService
+                                .verifyFaceForMonthlyRegistration(
+                                        activeDangKy, faceResult.getFaceId(), faceResult.getSimilarity());
+
+                        transaction.setFaceVerificationStatus(verifyResult.getStatus());
+
+                        if (verifyResult.isSuccess()) {
+                            String successNote = " [Xe có đăng ký tháng - Xác thực khuôn mặt thành công - Miễn phí]";
+                            transaction.setGhiChu((ghiChu != null ? ghiChu : "") + successNote);
+                        } else {
+                            String warningNote = " [CẢNH BÁO: Khuôn mặt không khớp với đăng ký tháng - "
+                                    + verifyResult.getMessage() + "]";
+                            transaction.setGhiChu((ghiChu != null ? ghiChu : "") + warningNote);
+                        }
+                    } else {
+                        // Nhận diện thất bại cho xe có đăng ký tháng
+                        transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_ENTRY);
+                        String failNote = " [CẢNH BÁO: Nhận diện khuôn mặt thất bại - " + faceResult.getMessage() + "]";
+                        transaction.setGhiChu((ghiChu != null ? ghiChu : "") + failNote);
+                    }
+                } else {
+                    // XE VÃNG LAI - ĐĂNG KÝ KHUÔN MẶT TẠM THỜI
+                    FaceRecognitionIntegrationService.FaceRegistrationResult regResult = faceRecognitionService
+                            .registerFaceForVisitor(faceImageBase64, bienSoXe);
+
+                    if (regResult.isSuccess()) {
+                        // Lưu thông tin face mới tạo
+                        transaction.setFaceIdEntry(regResult.getFaceId());
+                        transaction.setFaceSimilarityEntry(regResult.getSimilarity());
+                        transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.VERIFIED_ENTRY);
+
+                        String visitorNote = " [Xe vãng lai - Đã đăng ký khuôn mặt tạm thời - Face ID: "
+                                + regResult.getFaceId() + "]";
+                        transaction.setGhiChu((ghiChu != null ? ghiChu : "") + visitorNote);
+                    } else {
+                        // Đăng ký thất bại cho xe vãng lai
+                        transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_ENTRY);
+                        String failNote = " [CẢNH BÁO: Đăng ký khuôn mặt thất bại - " + regResult.getMessage() + "]";
+                        transaction.setGhiChu((ghiChu != null ? ghiChu : "") + failNote);
+                    }
+                }
+            } catch (Exception e) {
+                // Lỗi hệ thống face recognition
+                transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_ENTRY);
+                String errorNote = " [LỖI: Hệ thống nhận diện khuôn mặt gặp sự cố - " + e.getMessage() + "]";
+                transaction.setGhiChu((ghiChu != null ? ghiChu : "") + errorNote);
+            }
+        } else {
+            // Không có ảnh khuôn mặt - bỏ qua xác thực
+            transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.BYPASSED);
+            if (hasActiveMonthlyRegistration) {
+                String monthlyNote = " [Xe có đăng ký tháng - Bỏ qua xác thực khuôn mặt - Miễn phí]";
+                transaction.setGhiChu((ghiChu != null ? ghiChu : "") + monthlyNote);
+            }
+        }
+
+        // DUYỆT VÀO NGAY LẬP TỨC
+        transaction.approveEntry(staff);
+
+        // Lưu giao dịch trước
+        transaction = parkingTransactionRepository.save(transaction);
+
+        // Cập nhật số lượng xe trong bãi đỗ
+        parkingLotService.handleParkVehicle(parkingLot.getMaBaiDo());
+
+        return transaction;
     }
 
     /**
@@ -273,6 +430,168 @@ public class ParkingTransactionService {
         transaction.completeTransaction(staff, soTienThanhToan);
 
         // Cập nhật số lượng xe trong bãi đỗ
+        parkingLotService.handleUnparkVehicle(transaction.getParkingLot().getMaBaiDo());
+
+        return parkingTransactionRepository.save(transaction);
+    }
+
+    /**
+     * CHO XE RA TRỰC TIẾP VỚI FACE RECOGNITION - DÀNH CHO MOBILE/CAMERA SCAN
+     * Kết hợp tạo yêu cầu và duyệt ra trong 1 bước + xác thực khuôn mặt
+     */
+    public ParkingTransaction directVehicleExitWithFace(String bienSoXe, String maNhanVien,
+            BigDecimal soTienThanhToan, String faceImageBase64)
+            throws IdInvalidException {
+        // 1. Kiểm tra xe có đang đỗ trong bãi không
+        Optional<ParkingTransaction> activeTransactionOpt = parkingTransactionRepository
+                .findActiveTransactionByBienSoXe(bienSoXe);
+
+        if (activeTransactionOpt.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy xe " + bienSoXe + " trong bãi đỗ");
+        }
+
+        ParkingTransaction transaction = activeTransactionOpt.get();
+
+        // 2. Kiểm tra giao dịch đang active
+        if (transaction.getTrangThai() != TrangThaiGiaoDich.APPROVED_IN) {
+            throw new IllegalStateException("Xe " + bienSoXe + " không ở trạng thái đang đỗ trong bãi");
+        }
+
+        // 3. Xác thực nhân viên
+        Staff staff = staffService.fetchStaffByMaNV(maNhanVien);
+        if (staff == null) {
+            throw new IllegalArgumentException("Không tìm thấy nhân viên: " + maNhanVien);
+        }
+
+        // 4. Cập nhật thời gian ra
+        transaction.setThoiGianRa(LocalDateTime.now());
+
+        // 5. Kiểm tra đăng ký tháng
+        boolean hasActiveMonthlyRegistration = dangKyThangService.hasActiveDangKyThang(bienSoXe);
+        nckh.felix.StupidParking.domain.DangKyThang activeDangKy = null;
+
+        if (hasActiveMonthlyRegistration) {
+            activeDangKy = dangKyThangService.getActiveDangKyThang(bienSoXe);
+        }
+
+        // 6. XỬ LÝ FACE RECOGNITION
+        if (faceImageBase64 != null && !faceImageBase64.trim().isEmpty()) {
+            try {
+                // Nhận diện khuôn mặt khi xe ra
+                FaceRecognitionIntegrationService.FaceRecognitionResult faceResult = faceRecognitionService
+                        .recognizeFaceForExit(faceImageBase64, 0.6);
+
+                if (faceResult.isSuccess()) {
+                    // Lưu thông tin face khi xe ra
+                    transaction.setFaceIdExit(faceResult.getFaceId());
+                    transaction.setFaceSimilarityExit(faceResult.getSimilarity());
+
+                    if (hasActiveMonthlyRegistration && activeDangKy != null) {
+                        // Xe có đăng ký tháng - xác thực với đăng ký tháng
+                        FaceRecognitionIntegrationService.FaceVerificationResult verifyResult = faceRecognitionService
+                                .verifyFaceForMonthlyRegistration(
+                                        activeDangKy, faceResult.getFaceId(), faceResult.getSimilarity());
+
+                        if (verifyResult.isSuccess()) {
+                            // Cập nhật status cho cả xe vào và xe ra đều OK
+                            if (transaction
+                                    .getFaceVerificationStatus() == ParkingTransaction.FaceVerificationStatus.VERIFIED_ENTRY) {
+                                transaction.setFaceVerificationStatus(
+                                        ParkingTransaction.FaceVerificationStatus.VERIFIED_BOTH);
+                            } else {
+                                transaction.setFaceVerificationStatus(
+                                        ParkingTransaction.FaceVerificationStatus.VERIFIED_EXIT);
+                            }
+
+                            soTienThanhToan = BigDecimal.ZERO; // Miễn phí cho xe có đăng ký tháng
+                            String successNote = " [Xe ra - Xác thực khuôn mặt thành công - Miễn phí]";
+                            transaction.setGhiChu(
+                                    (transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + successNote);
+                        } else {
+                            transaction
+                                    .setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_EXIT);
+                            String warningNote = " [CẢNH BÁO XE RA: Khuôn mặt không khớp với đăng ký tháng - "
+                                    + verifyResult.getMessage() + "]";
+                            transaction.setGhiChu(
+                                    (transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + warningNote);
+                        }
+                    } else {
+                        // XE VÃNG LAI - SO SÁNH FACE VÀO VÀ RA
+                        if (transaction.getFaceIdEntry() != null) {
+                            FaceRecognitionIntegrationService.FaceVerificationResult verifyResult = faceRecognitionService
+                                    .verifyFaceForVisitorExit(faceImageBase64, transaction.getFaceIdEntry(), 0.6);
+
+                            // Lưu face_id_exit từ kết quả nhận diện
+                            transaction.setFaceIdExit(faceResult.getFaceId());
+                            transaction.setFaceSimilarityExit(faceResult.getSimilarity());
+
+                            if (verifyResult.isSuccess()) {
+                                // Khuôn mặt khớp - cho ra
+                                transaction.setFaceVerificationStatus(
+                                        ParkingTransaction.FaceVerificationStatus.VERIFIED_BOTH);
+                                String successNote = " [Xe vãng lai ra - Xác thực khuôn mặt thành công - Khuôn mặt khớp với lúc vào]";
+                                transaction.setGhiChu(
+                                        (transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + successNote);
+                            } else {
+                                // Khuôn mặt không khớp - cảnh báo
+                                transaction.setFaceVerificationStatus(
+                                        ParkingTransaction.FaceVerificationStatus.FAILED_EXIT);
+                                String warningNote = " [CẢNH BÁO XE RA: Khuôn mặt xe ra không khớp với xe vào - "
+                                        + verifyResult.getMessage() + "]";
+                                transaction.setGhiChu(
+                                        (transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + warningNote);
+                            }
+                        } else {
+                            // Không có face_id_entry để so sánh
+                            transaction.setFaceIdExit(faceResult.getFaceId());
+                            transaction.setFaceSimilarityExit(faceResult.getSimilarity());
+                            transaction.setFaceVerificationStatus(
+                                    ParkingTransaction.FaceVerificationStatus.FAILED_EXIT);
+                            String warningNote = " [CẢNH BÁO XE RA: Không có thông tin khuôn mặt khi xe vào để so sánh]";
+                            transaction.setGhiChu(
+                                    (transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + warningNote);
+                        }
+                    }
+                } else {
+                    // Nhận diện thất bại
+                    transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_EXIT);
+                    String failNote = " [CẢNH BÁO XE RA: Nhận diện khuôn mặt thất bại - " + faceResult.getMessage()
+                            + "]";
+                    transaction.setGhiChu((transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + failNote);
+                }
+            } catch (Exception e) {
+                // Lỗi hệ thống face recognition
+                transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.FAILED_EXIT);
+                String errorNote = " [LỖI XE RA: Hệ thống nhận diện khuôn mặt gặp sự cố - " + e.getMessage() + "]";
+                transaction.setGhiChu((transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + errorNote);
+            }
+        } else {
+            // Không có ảnh khuôn mặt - bỏ qua xác thực
+            if (transaction.getFaceVerificationStatus() != ParkingTransaction.FaceVerificationStatus.BYPASSED) {
+                transaction.setFaceVerificationStatus(ParkingTransaction.FaceVerificationStatus.BYPASSED);
+            }
+
+            if (hasActiveMonthlyRegistration) {
+                soTienThanhToan = BigDecimal.ZERO; // Miễn phí cho xe có đăng ký tháng
+                String monthlyNote = " [Xe ra - Bỏ qua xác thực khuôn mặt - Miễn phí]";
+                transaction.setGhiChu((transaction.getGhiChu() != null ? transaction.getGhiChu() : "") + monthlyNote);
+            }
+        }
+
+        // 7. Xử lý tính phí cho xe vãng lai
+        if (!hasActiveMonthlyRegistration) {
+            if (soTienThanhToan == null) {
+                long hours = transaction.getParkingDurationInHours();
+                BigDecimal hourlyRate = priceService.getHourlyRateByVehicleType(
+                        transaction.getVehicleType().getMaLoaiXe());
+                soTienThanhToan = hourlyRate.multiply(BigDecimal.valueOf(hours));
+            }
+        }
+
+        // 8. Hoàn thành giao dịch và ghi nhận nhân viên + số tiền
+        transaction.completeTransaction(staff, soTienThanhToan);
+
+        // 9. Cập nhật số chỗ trống trong bãi đỗ
         parkingLotService.handleUnparkVehicle(transaction.getParkingLot().getMaBaiDo());
 
         return parkingTransactionRepository.save(transaction);

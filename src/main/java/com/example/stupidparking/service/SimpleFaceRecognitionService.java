@@ -53,6 +53,13 @@ public class SimpleFaceRecognitionService {
      */
     public Map<String, Object> registerFace(String name, String base64Image, String description) {
         try {
+            System.out.println(" [SimpleFaceService] Preparing registerFace request...");
+            System.out.println(" [SimpleFaceService] Name: " + name);
+            System.out.println(" [SimpleFaceService] Description: " + description);
+            System.out.println(
+                    " [SimpleFaceService] Base64 length: " + (base64Image != null ? base64Image.length() : 0));
+            System.out.println(" [SimpleFaceService] Base URL: " + baseUrl);
+
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("name", name);
             requestBody.put("image", base64Image);
@@ -63,11 +70,20 @@ public class SimpleFaceRecognitionService {
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
+            System.out.println(
+                    " [SimpleFaceService] Sending POST request to: " + baseUrl + "/api/v1/simple-face/register");
+
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     baseUrl + "/api/v1/simple-face/register", request, Map.class);
 
+            System.out.println(" [SimpleFaceService] Response status: " + response.getStatusCode());
+            System.out.println(" [SimpleFaceService] Response body: " + response.getBody());
+
             return response.getBody();
         } catch (Exception e) {
+            System.out.println(" [SimpleFaceService] Exception in registerFace: " + e.getMessage());
+            e.printStackTrace();
+
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
             errorResponse.put("message", e.getMessage());

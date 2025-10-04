@@ -1,7 +1,9 @@
 package nckh.felix.StupidParking.controller;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
@@ -30,6 +32,42 @@ public class DangKyThangController {
 
     public DangKyThangController(DangKyThangService dangKyThangService) {
         this.dangKyThangService = dangKyThangService;
+    }
+
+    /**
+     * Tạo đăng ký tháng mới với Face Recognition
+     * Chỉ Staff (Admin và Bảo vệ) mới có quyền tạo
+     */
+    @PostMapping("/dang-ky-thang/with-face")
+    // @PreAuthorize("hasRole('ADMIN') or hasRole('BAO_VE')")
+    public ResponseEntity<?> createDangKyThangWithFace(@Valid @RequestBody DangKyThangCreateDTO createDTO) {
+        try {
+            DangKyThang dangKyThang = dangKyThangService.handleCreateDangKyThang(createDTO);
+
+            // Prepare response với thông tin face recognition
+            Map<String, Object> response = new HashMap<>();
+            response.put("dangKyThang", dangKyThang);
+            response.put("faceRecognitionEnabled", createDTO.isEnableFaceRecognition());
+
+            if (dangKyThang.getFaceId() != null) {
+                response.put("faceRegistrationSuccess", true);
+                response.put("faceId", dangKyThang.getFaceId());
+                response.put("faceSimilarity", dangKyThang.getFaceSimilarity());
+                response.put("message", "Đăng ký tháng và khuôn mặt thành công");
+            } else if (createDTO.isEnableFaceRecognition()) {
+                response.put("faceRegistrationSuccess", false);
+                response.put("message", "Đăng ký tháng thành công nhưng đăng ký khuôn mặt thất bại");
+            } else {
+                response.put("message", "Đăng ký tháng thành công (không sử dụng nhận diện khuôn mặt)");
+            }
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (IdInvalidException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
     }
 
     /**

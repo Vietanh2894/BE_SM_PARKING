@@ -20,6 +20,7 @@ import nckh.felix.StupidParking.domain.VehicleType;
 import nckh.felix.StupidParking.domain.dto.DangKyThangCreateDTO;
 import nckh.felix.StupidParking.domain.dto.DangKyThangUpdateDTO;
 import nckh.felix.StupidParking.repository.DangKyThangRepository;
+import nckh.felix.StupidParking.service.FaceRecognitionIntegrationService.FaceRegistrationResult;
 import nckh.felix.StupidParking.util.error.IdInvalidException;
 
 @Service
@@ -31,19 +32,22 @@ public class DangKyThangService {
     private final VehicleTypeService vehicleTypeService;
     private final UserService userService;
     private final PriceService priceService;
+    private final FaceRecognitionIntegrationService faceRecognitionService;
 
     public DangKyThangService(DangKyThangRepository dangKyThangRepository,
             VehicleService vehicleService,
             StaffService staffService,
             VehicleTypeService vehicleTypeService,
             UserService userService,
-            PriceService priceService) {
+            PriceService priceService,
+            FaceRecognitionIntegrationService faceRecognitionService) {
         this.dangKyThangRepository = dangKyThangRepository;
         this.vehicleService = vehicleService;
         this.staffService = staffService;
         this.vehicleTypeService = vehicleTypeService;
         this.userService = userService;
         this.priceService = priceService;
+        this.faceRecognitionService = faceRecognitionService;
     }
 
     @Transactional
@@ -159,7 +163,45 @@ public class DangKyThangService {
                 createDTO.getSoThang());
         dangKyThang.setSoTienThanhToan(soTienThanhToan);
 
-        return dangKyThangRepository.save(dangKyThang);
+        // Lưu đăng ký tháng trước
+        dangKyThang = dangKyThangRepository.save(dangKyThang);
+
+        // Xử lý Face Recognition nếu được bật
+        if (createDTO.isEnableFaceRecognition() && createDTO.getFaceImageBase64() != null) {
+            try {
+                System.out.println(" Bắt đầu đăng ký khuôn mặt cho CCCD: " + createDTO.getCccd());
+                System.out.println(" Face Image Base64 length: " + createDTO.getFaceImageBase64().length());
+                System.out.println(" Face Image starts with: " + createDTO.getFaceImageBase64().substring(0,
+                        Math.min(50, createDTO.getFaceImageBase64().length())));
+
+                FaceRecognitionIntegrationService.FaceRegistrationResult faceResult = faceRecognitionService
+                        .registerFaceForMonthlyRegistration(dangKyThang, createDTO.getFaceImageBase64());
+
+                System.out.println(" Face Registration Result: " + faceResult.isSuccess());
+                System.out.println(" Face Registration Message: " + faceResult.getMessage());
+                System.out.println(" Face ID: " + faceResult.getFaceId());
+                System.out.println(" Face Similarity: " + faceResult.getSimilarity());
+
+                if (faceResult.isSuccess()) {
+                    // Cập nhật lại với thông tin face
+                    System.out.println("Trước save - Face ID: " + dangKyThang.getFaceId());
+                    System.out.println("Trước save - Face Similarity: " + dangKyThang.getFaceSimilarity());
+                    dangKyThang = dangKyThangRepository.save(dangKyThang);
+                    System.out.println(" Sau save - Face ID: " + dangKyThang.getFaceId());
+                    System.out.println(" Sau save - Face Similarity: " + dangKyThang.getFaceSimilarity());
+                    System.out.println(" Đăng ký khuôn mặt thành công: " + faceResult.getMessage());
+                } else {
+                    System.out.println(" Đăng ký khuôn mặt thất bại: " + faceResult.getMessage());
+                    // Không throw exception, vẫn cho phép đăng ký tháng thành công
+                }
+            } catch (Exception e) {
+                System.out.println(" Lỗi khi đăng ký khuôn mặt: " + e.getMessage());
+                e.printStackTrace(); // In chi tiết stack trace để debug
+                // Log error nhưng không fail toàn bộ quá trình đăng ký
+            }
+        }
+
+        return dangKyThang;
     }
 
     public List<DangKyThang> getAllDangKyThang() {

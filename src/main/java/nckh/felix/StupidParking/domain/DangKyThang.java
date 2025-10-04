@@ -96,6 +96,16 @@ public class DangKyThang {
     @Column(name = "lan_gia_han", nullable = false)
     private Integer lanGiaHan = 0; // 0 = đăng ký gốc, 1,2,3... = số lần gia hạn
 
+    // Face Recognition Integration
+    @Column(name = "face_id", length = 100)
+    private String faceId; // ID khuôn mặt từ FastAPI
+
+    @Column(name = "face_similarity", precision = 5, scale = 3)
+    private BigDecimal faceSimilarity; // Độ tương đồng khi đăng ký
+
+    @Column(name = "face_registered_date")
+    private LocalDateTime faceRegisteredDate; // Thời gian đăng ký khuôn mặt
+
     // Enum for payment status
     public enum TrangThaiThanhToan {
         PENDING("Chờ thanh toán"),
@@ -365,6 +375,31 @@ public class DangKyThang {
 
     public void setLanGiaHan(Integer lanGiaHan) {
         this.lanGiaHan = lanGiaHan;
+    }
+
+    // Face Recognition getters and setters
+    public String getFaceId() {
+        return faceId;
+    }
+
+    public void setFaceId(String faceId) {
+        this.faceId = faceId;
+    }
+
+    public BigDecimal getFaceSimilarity() {
+        return faceSimilarity;
+    }
+
+    public void setFaceSimilarity(BigDecimal faceSimilarity) {
+        this.faceSimilarity = faceSimilarity;
+    }
+
+    public LocalDateTime getFaceRegisteredDate() {
+        return faceRegisteredDate;
+    }
+
+    public void setFaceRegisteredDate(LocalDateTime faceRegisteredDate) {
+        this.faceRegisteredDate = faceRegisteredDate;
     }
 
     // Business methods để quản lý gia hạn
